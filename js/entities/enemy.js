@@ -367,7 +367,9 @@ export class Enemy {
         game.audio.play('hitShield', { vol: 0.6 });
         game.view.burst(this.pos.x + Math.sin(this.yaw) * 0.6, this.pos.y + 1.15, this.pos.z + Math.cos(this.yaw) * 0.6, { count: 10, color: '#ffe0a0', speed: 4, life: 0.3 });
         this.hp -= Math.max(1, raw * 0.18);
-        if (info.from === game.player) game.player.stamina -= 5;
+        // Every other stamina path goes through Player.spend(), which floors at 0.
+        // This raw subtraction was the one way to end up in stamina debt.
+        if (info.from === game.player) game.player.stamina = Math.max(0, game.player.stamina - 5);
         this.wake(game);
         return true;
       }

@@ -566,6 +566,224 @@ const SCENARIOS = {
     g.save = prev; g.settings = prev.settings; g.input.applyPadBinds(prev.settings.pad); writeSave(prev);
     return { codeLen: code.length, rows, fail: rows.filter((r) => !r.pass).map((r) => r.test) };
   })()`,
+  balance: `(async () => {
+    const g = window.ashen;
+    // Rendering is stubbed once and never restored: this whole scenario is a CPU
+    // exchange model, and leaving the GPU out of it is what makes 50+ duels cheap.
+    if (!g.__det) { g.__det = true; g.__realRender = g.view.render.bind(g.view); g.view.render = () => {}; }
+    const step = () => { window.__simT = (window.__simT || performance.now()) + 16; g.loop(window.__simT); };
+    // BAL_FAST=1 trims the grid to a couple of duels per row: enough to prove the
+    // rig's own wiring (does the bot ever reach the enemy? does a boss construct?)
+    // in seconds instead of minutes. One trial per cell is far too noisy to tune
+    // from, so the statistical gates only assert on a full run.
+    const FAST = !!window.__balFast;
+    // 3 trials: a coin-flip cell needs to separate 33/67 from 0/100, and two
+    // trials cannot do that. The whole grid is CPU-only, so this buys signal for
+    // about a minute of wall time.
+    const TR = FAST ? 1 : 3;
+    const CAP = FAST ? 26 : 46;
+    const Emod = await import(new URL('js/entities/enemy.js', location.href).href);
+    const Cmod = await import(new URL('js/meta/content.js', location.href).href);
+    let s = 0x9e3779b9;
+    const rnd = () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
+    const hold = (code, on) => { if (on) g.input.down.add(code); else g.input.down.delete(code); };
+    // Tap = pressed only. The player reads every attack/roll/estus through
+    // justPressed(), and endFrame() clears the pressed set at the end of the
+    // frame, so this is a one-frame key tap. Adding the code to the down set too
+    // would stick it on forever and fake a held key for any isDown() read.
+    const press = (code) => { g.input.pressed.add(code); };
+
+    g.startRun('BALANCE-1', 'ashen_knight');
+    await new Promise((r) => setTimeout(r, 60));
+    for (let i = 0; i < 60; i++) step();
+    // Clear every interior cell (0 = CELL.FLOOR) and keep the outer ring as wall.
+    // A pillar or rubble pile in the arena makes the whole duel pathing-dependent,
+    // and "unbeatable mob" would then just mean "mob that can't reach me".
+    const carve = (grid) => { for (let cz = 1; cz < grid.h - 1; cz++) for (let cx = 1; cx < grid.w - 1; cx++) grid.set(cx, cz, 0); };
+    // A death flips state to 'dying' and then 'dead', and loop() only calls step()
+    // while playing — so without this every duel after the first player death
+    // would silently advance a frozen world and be reported as a timeout.
+    // startRun rebuilds the room, hence the re-carve on a fresh grid reference.
+    const ensureRun = () => {
+      if (g.state === 'playing') return;
+      g.startRun('BALANCE-1', 'ashen_knight');
+      for (let i = 0; i < 30; i++) step();
+      carve(g.room.grid);
+    };
+    ensureRun();
+
+    // react = seconds of telegraph the bot needs before it can answer;
+    // dodge = chance it actually answers; atk = chance it commits when its cadence
+    // window opens; gap = shortest seconds between swings. An l1 chain is ~0.52 s,
+    // so 0.5 is a human hammering J; pressing every frame instead is a 60 Hz mash
+    // no player can output, and it inflated every DPS number in the first draft.
+    const SKILLS = {
+      green: { react: 0.42, dodge: 0.45, atk: 0.5, gap: 0.85, range: 2.4 },
+      average: { react: 0.26, dodge: 0.62, atk: 0.8, gap: 0.5, range: 2.2 },
+      sharp: { react: 0.13, dodge: 0.88, atk: 0.95, gap: 0.34, range: 2.1 },
+    };
+
+    // Arrows and ground hazards outlive the enemy that spawned them, so leaving
+    // them behind would bleed damage from one duel into the next.
+    // Deliberately no dispose(): parts.js caches BoxGeometry/materials per module
+    // and dispose() frees those shared buffers, which is churn for the next spawn.
+    const clearFoes = () => {
+      for (const o of [...g.enemies, ...g.ashes]) o.mesh?.parent?.remove(o.mesh);
+      for (const p of g.projectiles) p.mesh.parent?.remove(p.mesh);
+      for (const h of g.hazards) h.mesh?.parent?.remove(h.mesh);
+      g.enemies.length = 0; g.ashes.length = 0; g.projectiles.length = 0; g.hazards.length = 0;
+      g.input.down.clear();
+      g.setLock(null);
+    };
+
+    const Bmod = await import(new URL('js/entities/boss.js', location.href).href);
+    const makeFoe = (kind, at, mul, depthIdx) => kind === 'boss'
+      ? new Bmod.Boss(g, depthIdx, at)
+      : new Emod.Enemy(g, kind, at, { hp: mul.hp, dmg: mul.dmg });
+
+    // A 1v1 flatters the player: DEPTH_MODIFIERS.count is a bonus enemy count per
+    // room (0/1/3), and the pressure a run actually applies is the group, not the
+    // archetype. So a cell fights 1+count of its kind, spread on a ring.
+    async function duel(kind, depthIdx, skill, relicIds, capSec) {
+      const mul = Cmod.DEPTH_MODIFIERS[depthIdx].enemyMul;
+      const ranged = ['ranged', 'healer'].includes(Emod.ARCHETYPES[kind]?.style);
+      ensureRun();
+      const P = g.player;
+      clearFoes();
+      P.recompute(relicIds || [], [], g.save.upgrades);
+      P.pos.set(0, 0, 0); P.vel.set(0, 0, 0); P.yaw = 0; g.rig.yaw = 0;
+      P.hp = P.maxHp; P.stamina = P.s.staminaMax; P.fp = P.s.fpMax;
+      P.estus = Math.round(P.s.estusMax); P.state = 'idle'; P.stT = 0; P.recentHit = 0; P.invuln = 0;
+      P.dead = false;
+      g.depthMod = Cmod.DEPTH_MODIFIERS[depthIdx]; g.boss = null; g.bossDone = false;
+      // A combat room holds 3 + count mixed mobs (main.js draw from ROOM_MOBS), so
+      // no single archetype turns up more than a couple of times. 1/2/3 by depth
+      // approximates that share without copying the weight table into the harness.
+      const n = kind === 'boss' ? 1 : 1 + Math.min(2, mul.count || 0);
+      const list = [];
+      for (let i = 0; i < n; i++) {
+        const a = 0.7 + (i / n) * Math.PI * 2;
+        const r = kind === 'boss' ? 5 : 6.2;
+        const at = P.pos.clone();
+        at.x = Math.sin(a) * r; at.z = Math.cos(a) * r; at.y = 0;
+        const e = makeFoe(kind, at, mul, depthIdx);
+        g.enemies.push(e); g.view.scene.add(e.mesh);
+        if (kind === 'boss') g.boss = e;
+        list.push({ e, hp0: e.hp });
+      }
+      // Lock-on is what a real player does first, and it is also what makes the
+      // camera-relative keys mean what they say: with a lock the rig sits behind
+      // the player facing the foe, so KeyW closes the distance. Writing P.yaw or
+      // rig.yaw by hand points the camera the other way, and every "unbeatable"
+      // duel in the first draft was just the bot running away.
+      g.rig.yaw = Math.atan2(P.pos.x - list[0].e.pos.x, P.pos.z - list[0].e.pos.z);
+      g.setLock(list[0].e);
+      for (let i = 0; i < 40; i++) step();
+      const live = () => list.filter((o) => o.e.alive && !o.e.dead);
+      const php0 = P.hp;
+      let t = 0, dodged = false, drank = 0, starved = 0, lastSwing = -1e9;
+      // loop() only steps the world while playing, so a state flip (draft, death
+      // screen) has to end the fight rather than burn the cap on a frozen scene.
+      const done = () => !live().length || P.dead || P.hp <= 0 || g.state !== 'playing' || t >= capSec * 1000;
+      while (true) {
+        if (!done()) {
+          let tg = null, bd = 1e9;
+          for (const o of live()) {
+            const d = Math.hypot(o.e.pos.x - P.pos.x, o.e.pos.z - P.pos.z);
+            if (d < bd) { bd = d; tg = o.e; }
+          }
+          const cl = g.lockTarget;
+          // re-lock like a player tapping Q: dead target, or one much further than
+          // the nearest. Handing the bot perfect target switching would be a free
+          // advantage, never re-locking is a free handicap.
+          if (!cl || cl.dead || !cl.alive || (tg !== cl && Math.hypot(cl.pos.x - P.pos.x, cl.pos.z - P.pos.z) > bd + 2)) g.setLock(tg);
+          const want = ranged ? skill.range + 1.4 : skill.range;
+          hold('KeyW', bd > want + 0.3); hold('KeyS', bd < want - 0.7);
+          // Pressing only when !busy never reaches the 3rd hit of the chain, and
+          // l3/l4 are spin attacks — the only lights a shield knight lets through.
+          if (bd <= want + 0.6 && t - lastSwing >= skill.gap * 1000 && (P.canAct || P.state === 'attack' || P.state === 'roll') && rnd() < skill.atk) { press('KeyJ'); lastSwing = t; }
+          const wr = live().some((o) => o.e.state === 'windup' && o.e.stT >= skill.react);
+          if (wr && !dodged && rnd() < skill.dodge && P.stamina > P.s.rollCost) { press('Space'); dodged = true; }
+          if (!live().some((o) => o.e.state === 'windup')) dodged = false;
+          if (P.hp < P.maxHp * 0.4 && P.estus > 0 && P.canAct) { press('KeyR'); drank++; }
+          if (P.stamina < P.s.rollCost && P.state === 'idle') starved += 16;
+        }
+        step(); t += 16;
+        if (done()) {
+          hold('KeyW', false); hold('KeyS', false); g.setLock(null);
+          const left = live().length;
+          const alive = !P.dead && P.hp > 0;
+          // bailed = the world stopped simulating for a reason that is not a fight
+          // outcome (a draft or a death screen stole the state). Counting those as
+          // losses is how a rig starts lying about balance.
+          return { win: !left && alive, foes: n, timedOut: !!left && alive && t >= capSec * 1000,
+            bailed: !!left && alive && g.state !== 'playing',
+            sec: t / 1000, dealt: list.reduce((a, o) => a + (o.hp0 - Math.max(0, o.e.hp)), 0),
+            took: php0 - P.hp, drank, starved: +(starved / 1000).toFixed(1) };
+        }
+      }
+    }
+
+    async function cell(kind, depthIdx, skillName, relicIds, trials = TR, capSec = CAP) {
+      const sk = SKILLS[skillName];
+      const out = [];
+      for (let i = 0; i < trials; i++) out.push(await duel(kind, depthIdx, sk, relicIds, capSec));
+      const mean = (f) => out.reduce((a, o) => a + f(o), 0) / out.length;
+      return { kind, depth: depthIdx + 1, skill: skillName, foes: out[0].foes, relic: (relicIds || []).join('+') || 'none',
+        winRate: +(out.filter((o) => o.win).length / out.length).toFixed(2), ttk: +mean((o) => o.sec).toFixed(1),
+        dealt: Math.round(mean((o) => o.dealt)), took: Math.round(mean((o) => o.took)),
+        drank: +mean((o) => o.drank).toFixed(1), starved: +mean((o) => o.starved).toFixed(1),
+        timeouts: out.filter((o) => o.timedOut).length, bailed: out.filter((o) => o.bailed).length, n: out.length };
+    }
+
+    const kinds = Object.keys(Emod.ARCHETYPES);
+    const list = FAST ? kinds.slice(0, 2) : kinds;
+    const depths = FAST ? [1] : [0, 1, 2];
+    // ROOM_MOBS[1] carries no zealot and the spawner drops guards below the second
+    // floor (main.js:261), so those cells would measure an encounter the game never
+    // generates. Skipping beats explaining a bogus row.
+    const present = (kind, d) => !(d === 0 && (kind === 'guard' || kind === 'zealot'));
+    const table = [];
+    for (const kind of list) for (const d of depths) { if (present(kind, d)) table.push(await cell(kind, d, 'average')); }
+    for (const kind of list) { if (present(kind, 2)) table.push(await cell(kind, 2, 'green')); }
+    for (const kind of list) { if (present(kind, 0)) table.push(await cell(kind, 0, 'sharp')); }
+    // one relic per axis: offense, mitigation, stamina economy
+    const probe = ['ember_oath', 'graven_bulwark', 'quiet_lungs'].filter((id) => Cmod.RELICS.some((r) => r.id === id));
+    const baseline = await cell('knight', 1, 'average', null, 3);
+    for (const id of probe) table.push({ ...(await cell('knight', 1, 'average', [id], 3)), relic: id, baseWin: baseline.winRate });
+    const bosses = [];
+    // Nobody walks into the fog with an empty pack: by the boss room the run has
+    // drafted relics, so the gate uses the same 3-relic loadout as the probes.
+    for (const d of depths) bosses.push(await cell('boss', d, 'average', probe, TR, FAST ? 45 : 90));
+
+    const avg = table.filter((r) => r.skill === 'average' && r.relic === 'none');
+
+    const rows = [];
+    const rec = (name, pass, detail) => rows.push({ test: name, pass: !!pass, detail: JSON.parse(JSON.stringify(detail ?? null)) });
+    const all = [...table, ...bosses];
+    const bad = (f) => all.filter(f).map((r) => r.kind + '@' + r.depth + '/' + r.skill);
+    rec('every encounter is beatable at average skill', avg.every((r) => r.winRate > 0.2) && bosses.every((r) => r.winRate > 0.1),
+      { mobs: avg.filter((r) => r.winRate <= 0.2).map((r) => r.kind + '@' + r.depth), bosses: bosses.filter((r) => r.winRate <= 0.1).map((r) => 'boss@' + r.depth + ':' + r.winRate) });
+    rec('no mob is a free win at average skill', FAST || avg.every((r) => r.winRate < 0.98), avg.filter((r) => r.winRate >= 0.98).map((r) => r.kind + '@' + r.depth));
+    rec('no duel ends in a timeout', all.every((r) => !r.timeouts), bad((r) => r.timeouts));
+    rec('no duel bails out of the sim', all.every((r) => !r.bailed), bad((r) => r.bailed));
+    const meanOf = (rows2, f) => rows2.length ? rows2.reduce((a, r) => a + f(r), 0) / rows2.length : 0;
+    const d1 = meanOf(avg.filter((r) => r.depth === 1), (r) => r.ttk);
+    const d3 = meanOf(avg.filter((r) => r.depth === 3), (r) => r.ttk);
+    rec('depth 3 is meaningfully slower than depth 1', FAST || d3 > d1 * 1.3, { d1: +d1.toFixed(1), d3: +d3.toFixed(1) });
+    rec('the last floor is not a wall', FAST || meanOf(avg.filter((r) => r.depth === 3), (r) => r.winRate) > 0.45,
+      { winRate: +meanOf(avg.filter((r) => r.depth === 3), (r) => r.winRate).toFixed(2) });
+    const g2 = table.filter((r) => r.skill === 'green');
+    rec('skill still matters on the last floor', FAST || g2.every((r) => {
+      const ref = avg.find((a) => a.kind === r.kind && a.depth === 3);
+      return ref && r.winRate <= ref.winRate + 0.05;
+    }), { green: g2.map((r) => r.kind + ':' + r.winRate) });
+    const relics = table.filter((r) => r.baseWin !== undefined);
+    rec('no probed relic swings the duel more than 30 points', FAST || relics.every((r) => Math.abs(r.winRate - r.baseWin) <= 0.3),
+      relics.map((r) => r.relic + ':' + r.baseWin + '->' + r.winRate));
+    rec('stamina starvation is visible but not dominant', avg.every((r) => r.starved < r.ttk * 0.5), avg.filter((r) => r.starved >= r.ttk * 0.5).map((r) => r.kind + '@' + r.depth + ':' + r.starved + '/' + r.ttk));
+    return { fast: FAST, table, bosses, rows, fail: rows.filter((r) => !r.pass).map((r) => r.test), duels: all.reduce((a, r) => a + r.n, 0) };
+  })()`,
   run: `(async () => {
     const g = window.ashen;
     const wait = (ms) => {
