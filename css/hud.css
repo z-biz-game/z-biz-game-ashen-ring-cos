@@ -253,6 +253,14 @@ kbd { font-family: var(--sans); font-size: 11px; padding: 3px 7px; border: 1px s
 .padkey.wait kbd { animation: padBlink 1.1s steps(2, jump-none) infinite; }
 @keyframes padBlink { 50% { opacity: 0.3; } }
 .btn.tiny { font-size: 11px; padding: 4px 11px; letter-spacing: 0.12em; }
+.save-code {
+  width: 100%; background: #08090c; border: 1px solid var(--line); color: #b3a88f;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; line-height: 1.5;
+  padding: 6px 8px; resize: vertical; pointer-events: auto; word-break: break-all;
+}
+.save-code:focus { border-color: var(--gold); outline: none; }
+.savecode-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dim.warn { color: #cf6a55; }
 .pause-actions { display: flex; gap: 12px; margin-top: 16px; }
 .rules { font-size: 12px; line-height: 2; color: #978e7e; padding-left: 18px; font-family: var(--sans); }
 .rules li::marker { color: var(--gold); }

@@ -24,7 +24,7 @@ npm start            # → http://127.0.0.1:5173
 ```bash
 npm run dev          # 指定端口：node server.cjs 5173
 npm run check        # 逐文件 node --check 语法门禁
-npm run verify       # 无头浏览器跑 92 项运行时断言（需本机 Chrome）
+npm run verify       # 无头浏览器跑 109 项运行时断言（需本机 Chrome）
 npm run electron     # 桌面壳启动（electron/main.cjs）
 ```
 
@@ -143,7 +143,7 @@ vendor/
 ├── three.module.js   Three.js 0.170
 └── jsm/…             postprocessing + shaders（EffectComposer / UnrealBloom / OutputPass）
 tools/
-├── playtest.mjs      CDP 驱动：92 项运行时断言（@combat / @spell / @run）
+├── playtest.mjs      CDP 驱动：109 项运行时断言（@combat / @spell / @save / @run）
 └── verify.sh         一次性验证：真实 GPU + trap/看门狗收尾
 ```
 
@@ -226,6 +226,23 @@ RenderPass → UnrealBloomPass → GradeShader → OutputPass(ACES)
 
 ---
 
+## 存档码 / Save code
+
+进度存在 `localStorage`，而它**按域名隔离**：线上那份和本地那份是两个互不相干的账号。
+设置页里有导出/导入，把整个元进度变成一串码：
+
+```
+ASHEN1-<base64url(payload)>.<7 位校验>
+```
+
+- 载荷是 `{v:1, marks, upgrades, curses, lastClass, codex, settings}`，`v` 用于以后不兼容时明确拒绝而不是猜。
+- 校验和是 FNV-1a：少粘一个字符、粘错、中途改动都会在导入时报错，不会静默变成半份存档。
+- 导入的每一项都要过 `sanitizeSave()`：未知键丢弃、数值夹进区间、`upgrades`/`codex.relics` 的键必须匹配
+  `^[\w-]{1,40}$`、`pad` 只收 0–31 的整数。存档码来自另一台机器，等于外部输入，不能直接对象展开就信。
+- 一局进行中导入只影响印记与图鉴，血脉/诅咒要下一轮才生效（界面上会写），因为本局的属性在开局就算完了。
+
+---
+
 ## 测试 / Testing
 
 无第三方测试框架。用 Node 原生 `WebSocket` 直连 Chrome DevTools Protocol 驱动真实页面，
@@ -233,7 +250,7 @@ RenderPass → UnrealBloomPass → GradeShader → OutputPass(ACES)
 
 ```bash
 npm start &          # 另一终端：静态服务器
-npm run verify       # tools/verify.sh：@combat(22) + @spell(8) + @run(62) = 92 项断言
+npm run verify       # tools/verify.sh：@combat(22) + @spell(8) + @save(17) + @run(62) = 109 项
 ```
 
 手工分步：
@@ -246,6 +263,7 @@ npm run verify       # tools/verify.sh：@combat(22) + @spell(8) + @run(62) = 92
 CDP_PORT=9334 node tools/playtest.mjs open http://127.0.0.1:5173/
 CDP_PORT=9334 node tools/playtest.mjs eval "@combat"   # 22 项战斗断言
 CDP_PORT=9334 node tools/playtest.mjs eval "@spell"    # 8 项法术 / 召唤 / 弹道
+CDP_PORT=9334 node tools/playtest.mjs eval "@save"     # 17 项存档码往返 / 篡改 / 类型投毒
 CDP_PORT=9334 node tools/playtest.mjs eval "@run"      # 62 项三层通关流程
 
 # 打线上而不是本地：BASE_URL 决定 attach 哪个标签页

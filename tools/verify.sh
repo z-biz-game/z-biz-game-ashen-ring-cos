@@ -56,7 +56,8 @@ echo "boot state: $BOOT"
 # The loop skips frames on a hidden page (by design) and headless reports hidden.
 node tools/playtest.mjs eval "Object.defineProperty(document,'hidden',{get:()=>false,configurable:true});Object.defineProperty(document,'visibilityState',{get:()=>'visible',configurable:true});'visible'" nonav >/dev/null 2>&1
 FAILED=0
-for s in combat spell run; do
+# SCENARIOS="save run" tools/verify.sh   → iterate on a subset.
+for s in ${SCENARIOS:-combat spell save run}; do
   echo "=== @$s ==="
   node tools/playtest.mjs eval "@$s" nonav 2>&1 | python3 -c "
 import sys,json,re

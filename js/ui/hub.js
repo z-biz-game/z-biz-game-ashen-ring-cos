@@ -1,5 +1,5 @@
 import { CLASSES, CURSES, HUB_UPGRADES, RELICS, DEPTH_MODIFIERS } from '../meta/content.js';
-import { upgradeCost, wipeSave, writeSave } from '../meta/save.js';
+import { upgradeCost, wipeSave, writeSave, exportCode, importCode } from '../meta/save.js';
 import { resolveStats, summarize } from '../meta/stats.js';
 import { cardHTML, STAT_CN } from './hud.js';
 import { PAD_ACTIONS, PAD_NAMES } from '../engine/input.js';
@@ -113,6 +113,8 @@ class HubUI {
       g.audio.play?.('lockoff', { vol: 0.4 });
       this.renderPadMap();
     };
+    $('btnExport').onclick = () => this.exportSave();
+    $('btnImport').onclick = () => this.importSave();
     for (const el of document.querySelectorAll('#screens button, #screens .btn')) {
       el.onmouseenter = () => g.audio.play?.('uiMove', { vol: 0.35 });
     }
@@ -126,6 +128,47 @@ class HubUI {
     $('dmgChk').checked = !!s.dmgNums;
     this.game.audio.setVolume('master', s.volume);
     writeSave(this.game.save);
+  }
+
+  codeMsg(text, bad) {
+    const el = $('codeState');
+    if (!el) return;
+    el.textContent = text;
+    el.classList.toggle('warn', !!bad);
+    clearTimeout(this._codeT);
+    this._codeT = setTimeout(() => { el.textContent = ''; }, 7000);
+  }
+
+  exportSave() {
+    const g = this.game;
+    const code = exportCode(g.save);
+    const box = $('saveCode');
+    box.value = code;
+    box.select();
+    // Clipboard write needs a secure context and can still be refused; the textarea
+    // is selected either way, so a manual copy keeps working.
+    if (!navigator.clipboard) this.codeMsg('已生成，按 Ctrl/⌘+C 复制');
+    else navigator.clipboard.writeText(code).then(
+      () => this.codeMsg(`已复制 · ${g.save.marks} 灰烬印记`),
+      () => this.codeMsg('已生成，按 Ctrl/⌘+C 复制'));
+  }
+
+  importSave() {
+    const g = this.game;
+    const res = importCode($('saveCode').value);
+    if (!res.ok) { this.codeMsg(res.reason, true); g.audio.play?.('uiBack', { vol: 0.6 }); return; }
+    const before = g.save.marks;
+    g.save = res.save;
+    g.settings = g.save.settings;
+    writeSave(g.save);
+    g.applySettings();
+    g.input.applyPadBinds(g.settings.pad);
+    this.syncSettings();
+    this.renderPadMap();
+    if (g.state === 'hub') this.renderHub();
+    g.audio.play?.('lockon', { vol: 0.6 });
+    const mid = ['playing', 'paused', 'grace', 'draft'].includes(g.state);
+    this.codeMsg(`已导入：印记 ${before} → ${g.save.marks}${mid ? ' · 血脉与诅咒下一轮生效' : ''}`);
   }
 
   renderPadMap() {

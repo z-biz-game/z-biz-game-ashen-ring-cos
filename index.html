@@ -163,6 +163,16 @@
               <div id="padMap" class="pad-map"></div>
               <button class="btn tiny" id="btnPadReset">恢复默认映射</button>
             </div>
+            <div class="opt opt-col">
+              <span>存档码 · <em class="dim">进度按域名隔离，换设备靠这串码</em></span>
+              <textarea id="saveCode" class="save-code" rows="3" spellcheck="false"
+                placeholder="点「导出」生成；把别处的码粘进来再点「导入」"></textarea>
+              <div class="savecode-row">
+                <button class="btn tiny" id="btnExport">导出</button>
+                <button class="btn tiny" id="btnImport">导入</button>
+                <em id="codeState" class="dim"></em>
+              </div>
+            </div>
             <div class="pause-actions">
               <button class="btn" id="btnResume">继续</button>
               <button class="btn danger" id="btnAbandon">放弃本轮</button>
