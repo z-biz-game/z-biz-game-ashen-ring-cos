@@ -12,21 +12,28 @@ const MOVES = {
   roar: { cn: '唤灵', windup: 1.05, cd: 13, summon: 2 },
 };
 
+// HP is set from the balance rig's measured uptime, not from a difficulty curve: a
+// geared player at average skill lands about 15 dps through a boss's def and survives
+// roughly 40 s of its pressure, so every door has to resolve inside that window — the
+// last one the tightest. The previous 700 hp / 23 dmg nameless needed 48 s and the rig
+// lost it 0/3 with 564 of 700 dealt; length is not difficulty. The archetypes before
+// that (840 / 1250 hp on the last two doors) asked for 95 s, which is not a hard fight
+// but an unanswered one.
 const BOSS_KINDS = [
   {
-    key: 'gatekeeper', hp: 620, dmg: 17, def: 8, speed: 3.0, scale: 1.65, bulk: 1.35,
+    key: 'gatekeeper', hp: 500, dmg: 17, def: 8, speed: 3.0, scale: 1.65, bulk: 1.35,
     armor: '#5b5346', cloth: '#3d2a1c', metal: '#b7a582', glow: '#ffb04a', eye: '#ffca6a',
     weapon: 'greatsword', moves: ['sweep', 'cleave', 'thrust', 'roar'], runes: [220, 320],
     title: '灰烬守门人', sub: 'Gatekeeper of Ash',
   },
   {
-    key: 'penitent', hp: 840, dmg: 21, def: 12, speed: 3.4, scale: 1.75, bulk: 1.3,
+    key: 'penitent', hp: 600, dmg: 21, def: 12, speed: 3.4, scale: 1.75, bulk: 1.3,
     armor: '#6a3d46', cloth: '#2a1a28', metal: '#cbb2a0', glow: '#e0708a', eye: '#ffd0e0',
     weapon: 'twinblade', moves: ['sweep', 'thrust', 'volley', 'cleave', 'roar'], runes: [340, 460],
     title: '双面忏悔者', sub: 'The Twin-Faced Penitent',
   },
   {
-    key: 'nameless', hp: 1250, dmg: 26, def: 16, speed: 3.7, scale: 2.0, bulk: 1.5,
+    key: 'nameless', hp: 620, dmg: 18, def: 16, speed: 3.7, scale: 2.0, bulk: 1.5,
     armor: '#3a2f52', cloth: '#1b1430', metal: '#d8c071', glow: '#ffd479', eye: '#fff0b0',
     weapon: 'greatsword', moves: ['sweep', 'cleave', 'thrust', 'volley', 'ring', 'roar'], runes: [620, 880],
     title: '灰烬王 · 环中无名者', sub: 'Ashen Crown, the Nameless Within',
@@ -36,8 +43,11 @@ const BOSS_KINDS = [
 export class Boss extends Enemy {
   constructor(game, depth, pos) {
     const k = BOSS_KINDS[clamp(depth, 0, 2)];
-    const mul = game.depthMod?.enemyMul || { hp: 1, dmg: 1 };
-    super(game, 'guard', pos, { hp: mul.hp, dmg: mul.dmg }, {
+    // A boss's own kind stats already carry the curve (17 / 21 / 26 damage across the
+    // three doors against a 120-point player bar). Scaling them by the trash depth
+    // modifier as well made the last door land 39 per hit — three hits, which is not
+    // a harder fight but a shorter one, and the balance rig never saw it lose.
+    super(game, 'guard', pos, { hp: 1, dmg: 1 }, {
       cfg: {
         ...ARCHETYPES.guard, hp: k.hp, dmg: k.dmg, def: k.def, speed: k.speed, scale: k.scale, bulk: k.bulk,
         armor: k.armor, cloth: k.cloth, metal: k.metal, weapon: k.weapon, helm: 'horns', aggro: 40,

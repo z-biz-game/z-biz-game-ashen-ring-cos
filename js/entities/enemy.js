@@ -3,12 +3,18 @@ import { clamp, damp, angleDamp, distSq } from '../engine/rng.js';
 import { makeHumanoid, resetRig, mat } from './parts.js';
 import { meleeArc } from '../combat/hit.js';
 
+// The wraith's windup and the guard's hp/dmg are the balance rig's, not a guess: a
+// 0.36 s telegraph is shorter than a mid-skill reaction window, so the flurry mob was
+// taking 74% of a health bar out of a first-floor player. A guard at 175/18 then made
+// every second- and third-floor room that drew one end at full attrition (1.00 of a
+// 1.00 bar, i.e. death) even behind the engagement queue and one-heavy-per-room — the
+// anchor has to be slow to kill, not unkillable alongside escorts.
 export const ARCHETYPES = {
   hollow: { cn: '空壳游魂', en: 'Hollow Remnant', hp: 58, dmg: 8.5, def: 0, speed: 2.7, aggro: 11, reach: 2.2, arc: 100, windup: 0.5, recover: 0.5, cooldown: 1.5, runes: [9, 16], poise: 26, style: 'melee', scale: 1, bulk: 0.9, helm: 'hood', armor: '#4a4038', cloth: '#33291f', weapon: 'curved' },
   knight: { cn: '誓灰骑士', en: 'Ashbound Knight', hp: 104, dmg: 12, def: 6, speed: 2.9, aggro: 13, reach: 2.4, arc: 95, windup: 0.42, recover: 0.55, cooldown: 1.8, runes: [18, 30], poise: 48, style: 'shield', scale: 1.05, bulk: 1.15, helm: 'closed', armor: '#545a63', cloth: '#4a2d24', weapon: 'straight', shield: true },
   archer: { cn: '破誓弓手', en: 'Oathbreaker Archer', hp: 52, dmg: 10, def: 1, speed: 3.1, aggro: 17, reach: 15, windup: 0.62, recover: 0.5, cooldown: 2.1, runes: [14, 22], poise: 22, style: 'ranged', scale: 1, bulk: 0.92, helm: 'hood', armor: '#43404b', cloth: '#2f3a30', weapon: 'bow' },
-  wraith: { cn: '灰烬怨灵', en: 'Cinder Wraith', hp: 62, dmg: 11, def: 0, speed: 4.4, aggro: 15, reach: 2.6, arc: 130, windup: 0.36, recover: 0.42, cooldown: 1.2, runes: [16, 26], poise: 20, style: 'flurry', scale: 1.08, bulk: 0.85, helm: 'none', armor: '#2f2b3a', cloth: '#1b1826', weapon: 'dagger', hover: true, ethereal: true },
-  guard: { cn: '残树守卫', en: 'Siege Tree-Guard', hp: 210, dmg: 21, def: 10, speed: 2.2, aggro: 12, reach: 3.4, arc: 150, windup: 0.8, recover: 0.85, cooldown: 2.6, runes: [40, 62], poise: 100, style: 'large', scale: 1.5, bulk: 1.5, helm: 'horns', armor: '#4b4436', cloth: '#2b2417', weapon: 'hammer', super: true },
+  wraith: { cn: '灰烬怨灵', en: 'Cinder Wraith', hp: 62, dmg: 9.5, def: 0, speed: 4.4, aggro: 15, reach: 2.6, arc: 130, windup: 0.42, recover: 0.42, cooldown: 1.2, runes: [16, 26], poise: 20, style: 'flurry', scale: 1.08, bulk: 0.85, helm: 'none', armor: '#2f2b3a', cloth: '#1b1826', weapon: 'dagger', hover: true, ethereal: true },
+  guard: { cn: '残树守卫', en: 'Siege Tree-Guard', hp: 122, dmg: 15, def: 10, speed: 2.2, aggro: 12, reach: 3.4, arc: 150, windup: 0.8, recover: 0.85, cooldown: 2.6, runes: [40, 62], poise: 100, style: 'large', scale: 1.5, bulk: 1.5, helm: 'horns', armor: '#4b4436', cloth: '#2b2417', weapon: 'hammer', super: true },
   zealot: { cn: '燃血狂信者', en: 'Bloodburn Zealot', hp: 68, dmg: 9, def: 2, speed: 3.0, aggro: 16, reach: 12, windup: 0.5, recover: 0.6, cooldown: 2.4, runes: [22, 34], poise: 28, style: 'healer', scale: 1.02, bulk: 0.95, helm: 'hood', armor: '#6a4f2c', cloth: '#7a2f22', weapon: 'chime' },
 };
 
@@ -212,11 +218,33 @@ export class Enemy {
     return d;
   }
 
+  // Souls-like engagement queue: a room of six mobs that all charge is not a hard
+  // fight, it is a pile-on no build clears — the balance rig measured depth-2 and
+  // depth-3 rooms as an unwinnable wall for this one reason, with six attackers at
+  // 12-31 damage per hit outpacing any estus bar. Only the closest few close in; the
+  // rest circle at leash range, so a room resolves as a queue of duels. Re-ranked
+  // twice a second so two enemies never fight over the same slot, and a boss never
+  // queues behind trash.
+  pressWindow(game, dt) {
+    if (this.boss) return true;
+    if (!this.pressT || this.pressT <= 0) {
+      this.pressT = 0.5;
+      const P = game.player;
+      const d2 = (e) => (e.pos.x - P.pos.x) ** 2 + (e.pos.z - P.pos.z) ** 2;
+      const awake = game.enemies.filter((e) => e.alive && !e.dead && !e.boss && e.state !== 'idle');
+      awake.sort((a, b) => d2(a) - d2(b));
+      this.pressing = awake.indexOf(this) < ((game.depthMod?.depth || 1) >= 3 ? 3 : 2);
+    }
+    this.pressT -= dt;
+    return this.pressing;
+  }
+
   brain(dt, game, d) {
     const c = this.cfg;
     this.strafe = this.strafe || (game.rng.chance(0.5) ? 1 : -1);
     if (!this.strafeT || this.strafeT <= 0) { this.strafeT = game.rng.range(1.2, 2.6); if (game.rng.chance(0.35)) this.strafe *= -1; }
     this.strafeT -= dt;
+    if (!this.pressWindow(game, dt)) { this.approach(game, dt, 8.6, c.speed * 0.72); return; }
 
     if (c.style === 'shield') {
       this.blocking = (game.player.state === 'attack' || game.player.state === 'heavy') && d < 4.2 && !game.player.move?.spin;
@@ -224,7 +252,14 @@ export class Enemy {
     if (c.style === 'healer') {
       const hurt = game.enemies.find((e) => e !== this && e.alive && !e.dead && e.hp < e.maxHp * 0.6 && Math.hypot(e.pos.x - this.pos.x, e.pos.z - this.pos.z) < 13);
       if (hurt && (!this.cool || this.cool <= 0)) { this.setState('cast', 0); this.healTarget = hurt; return; }
-      this.approach(game, dt, 9, c.speed);
+      // A zealot that only heals is a support nobody has to answer, and a room that
+      // contains two of them cannot be lost at all — the balance rig measured 0% win
+      // rate with the zealot dealing zero damage. It keeps the heal and gains the
+      // fire its cult already preaches, so the player has to close on it.
+      if (d > 8) this.approach(game, dt, 7, c.speed);
+      else if (d < 4.5) this.approach(game, dt, 8, c.speed);
+      else { this.facePos(game.player.pos.x, game.player.pos.z, 7, dt); this.stepMove(game, dt, -Math.cos(this.yaw) * this.strafe, Math.sin(this.yaw) * this.strafe, c.speed * 0.55); this.walkPhase += dt * 3; }
+      if ((!this.cool || this.cool <= 0) && d < 13 && game.room.grid.los(this.pos.x, this.pos.z, game.player.pos.x, game.player.pos.z)) this.shoot(game);
       return;
     }
     if (c.style === 'ranged') {
@@ -297,7 +332,9 @@ export class Enemy {
   healPulse(game) {
     const t = this.healTarget;
     if (!t || !t.alive) return;
-    const amt = Math.round(t.maxHp * 0.24);
+    // 24% every 3.2 s out-escapes a player's sustained damage, which is how a room
+    // with two zealots became unclearable in the balance rig's first full run.
+    const amt = Math.round(t.maxHp * 0.12);
     t.hp = Math.min(t.maxHp, t.hp + amt);
     game.view.burst(t.pos.x, t.pos.y + 1.1, t.pos.z, { count: 24, color: '#ff8a5c', speed: 2.4, life: 0.8, up: 2, gravity: 1 });
     game.damageNumber(t.pos, '+' + amt, 'heal');

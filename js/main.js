@@ -27,8 +27,30 @@ const HINTS = {
 
 const ROOM_MOBS = {  1: [['hollow', 5], ['knight', 2], ['archer', 2], ['wraith', 1]],
   2: [['hollow', 4], ['knight', 3], ['archer', 3], ['wraith', 2], ['zealot', 2], ['guard', 1]],
-  3: [['knight', 3], ['wraith', 3], ['archer', 2], ['zealot', 2], ['guard', 3], ['hollow', 2]],
+  3: [['knight', 3], ['wraith', 3], ['archer', 2], ['zealot', 2], ['guard', 2], ['hollow', 2]],
 };
+
+// A room gets one anchor. Two siege guards in the same pack is not a harder
+// encounter, it is an unanswered one: the balance rig measured full-bar attrition
+// (1.00, i.e. death) for every room that drew two of them at any skill level.
+const HEAVY_MOBS = ['guard'];
+
+function pickMobKind(rng, table, depth, taken) {
+  const options = table.map(([k, w]) => ({ k, weight: w }))
+    .filter((e) => depth >= 1 || e.k !== 'guard')
+    .filter((e) => !HEAVY_MOBS.includes(e.k) || !taken.includes(e.k));
+  const k = rng.weighted(options, (x) => x.weight).k;
+  taken.push(k);
+  return k;
+}
+
+// How many mobs a room rolls. The balance rig had to be pointed at this number
+// directly: with a base of 3 the third floor generated 5-6 mobs, and even behind the
+// engagement queue every such room ended with the player dead at full attrition. A
+// souls room is a short queue of duels, so the base is 2 and depth only adds one.
+function roomMobCount(mod, rng, base = 2) {
+  return Math.max(1, base + (mod?.count || 0) + rng.int(0, 1));
+}
 
 function disposeMesh(obj) {
   obj.parent?.remove(obj);
@@ -253,12 +275,13 @@ class Game {
       if (this.bossDone) this.bossSpawn = null;
       return;
     }
-    let count = spec.type === 'cache' ? 2 : 3 + mod.count + rng.int(0, 1);
+    let count = spec.type === 'cache' ? 2 : roomMobCount(mod, rng);
     if (spec.type === 'shrine') count = Math.max(2, count - 2);
     const table = ROOM_MOBS[clamp(depth + 1, 1, 3)];
     const points = spreadPoints(layoutRoom, count, rng);
+    const taken = [];
     for (let i = 0; i < count; i++) {
-      const kind = rng.weighted(table.map(([k, w]) => ({ k, weight: w })).filter((e) => depth >= 1 || !['guard'].includes(e.k)), (x) => x.weight).k;
+      const kind = pickMobKind(rng, table, depth, taken);
       const p = points[i] || { x: 0, z: 0 };
       const e = new Enemy(this, kind, new THREE.Vector3(p.x, 0, p.z), { hp: mod.hp, dmg: mod.dmg });
       this.enemies.push(e);
@@ -515,9 +538,10 @@ class Game {
     this.enemies.filter((e) => e.alive).forEach((e) => { e.dispose(); });
     this.enemies = [];
     if (spec.type !== 'chapel' && spec.type !== 'boss') {
-      const points = spreadPoints(layoutRoom, 3 + mod.count + rng.int(0, 1), rng);
+      const points = spreadPoints(layoutRoom, roomMobCount(mod, rng), rng);
+      const taken = [];
       for (let i = 0; i < points.length; i++) {
-        const e = new Enemy(this, this.mobPick(rng), points[i], { hp: mod.hp, dmg: mod.dmg });
+        const e = new Enemy(this, this.mobPick(rng, taken), points[i], { hp: mod.hp, dmg: mod.dmg });
         this.enemies.push(e);
         this.view.scene.add(e.mesh);
       }
@@ -528,9 +552,9 @@ class Game {
     writeSave(this.save);
   }
 
-  mobPick(rng) {
+  mobPick(rng, taken = []) {
     const table = ROOM_MOBS[clamp(this.run.depth + 1, 1, 3)];
-    return rng.weighted(table.map(([k, w]) => ({ k, weight: w })), (x) => x.weight).k;
+    return pickMobKind(rng, table, this.run.depth, taken);
   }
 
   onPlayerDeath(info = {}) {
@@ -959,4 +983,4 @@ window.addEventListener('DOMContentLoaded', () => {
   game.hub.bind();
 });
 
-export { Game, statBlock };
+export { Game, statBlock, ROOM_MOBS, pickMobKind, roomMobCount };
