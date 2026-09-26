@@ -5,7 +5,7 @@
 # Software rasterization saturates ~10 cores and, with no CDP client attached,
 # the process will not exit on its own.
 #
-#   ./tools/verify.sh            # runs @combat @spell @run, writes /tmp screenshots
+#   ./tools/verify.sh            # runs @combat @spell @save @run, writes /tmp screenshots
 set -u
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 PORT=${CDP_PORT:-9334}
