@@ -158,6 +158,11 @@
             </label>
             <label class="opt"><span>视角反转 Y</span><input type="checkbox" id="invertChk" /></label>
             <label class="opt"><span>伤害数字</span><input type="checkbox" id="dmgChk" checked /></label>
+            <div class="opt opt-col">
+              <span>手柄按键 · <em id="padState" class="dim">未检测到手柄</em></span>
+              <div id="padMap" class="pad-map"></div>
+              <button class="btn tiny" id="btnPadReset">恢复默认映射</button>
+            </div>
             <div class="pause-actions">
               <button class="btn" id="btnResume">继续</button>
               <button class="btn danger" id="btnAbandon">放弃本轮</button>

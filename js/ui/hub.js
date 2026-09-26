@@ -2,6 +2,7 @@ import { CLASSES, CURSES, HUB_UPGRADES, RELICS, DEPTH_MODIFIERS } from '../meta/
 import { upgradeCost, wipeSave, writeSave } from '../meta/save.js';
 import { resolveStats, summarize } from '../meta/stats.js';
 import { cardHTML, STAT_CN } from './hud.js';
+import { PAD_ACTIONS, PAD_NAMES } from '../engine/input.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -25,18 +26,18 @@ const KEY_HELP = [
   ['Esc 或 P', '暂停'],
 ];
 
-const PAD_HELP = [
-  ['左摇杆', '移动'],
-  ['右摇杆', '视角'],
-  ['RT / X', '轻击'],
-  ['LT / Y', '重击 · 格挡'],
-  ['A', '翻滚'],
-  ['B', '弹反'],
-  ['LB', '锁定'],
-  ['RB', '休息 · 拾取'],
-  ['十字键', '药瓶 / 召唤 / 法术'],
-  ['Start', '暂停'],
-];
+const PAD_LABEL = {
+  move: '移动', look: '视角', roll: '翻滚', light: '轻击', heavy: '重击', block: '格挡',
+  parry: '弹反', jump: '跳跃', lock: '锁定', interact: '休息 · 拾取', estus: '元素瓶',
+  ash: '召唤灰烬', spell1: '法术 I', spell2: '法术 II', pause: '暂停', reroll: '圣物重抽',
+};
+
+// Rendered from the live bindings, so the help page cannot drift from a remap.
+function padHelpRows(input) {
+  const rows = [['左摇杆', PAD_LABEL.move], ['右摇杆', PAD_LABEL.look]];
+  for (const act of PAD_ACTIONS) rows.push([input.padLabel(act), PAD_LABEL[act]]);
+  return rows;
+}
 
 const RULES = [
   '三层轮回，每层数间，尽头是雾门之后的首领。',
@@ -99,6 +100,19 @@ class HubUI {
     $('qualitySel').onchange = (e) => { g.settings.quality = Number(e.target.value); g.applySettings(); };
     $('invertChk').onchange = (e) => { g.settings.invert = e.target.checked; writeSave(g.save); };
     $('dmgChk').onchange = (e) => { g.settings.dmgNums = e.target.checked; writeSave(g.save); };
+    this.renderPadMap();
+    $('btnPadReset').onclick = () => {
+      g.settings.pad = {};
+      g.input.applyPadBinds(null);
+      writeSave(g.save);
+      this.renderPadMap();
+    };
+    g.input.onPadCapture = (act, idx) => {
+      g.settings.pad[act] = idx;
+      writeSave(g.save);
+      g.audio.play?.('lockoff', { vol: 0.4 });
+      this.renderPadMap();
+    };
     for (const el of document.querySelectorAll('#screens button, #screens .btn')) {
       el.onmouseenter = () => g.audio.play?.('uiMove', { vol: 0.35 });
     }
@@ -112,6 +126,32 @@ class HubUI {
     $('dmgChk').checked = !!s.dmgNums;
     this.game.audio.setVolume('master', s.volume);
     writeSave(this.game.save);
+  }
+
+  renderPadMap() {
+    const el = $('padMap');
+    if (!el) return;
+    const g = this.game;
+    const cap = g.input.capturing;
+    el.innerHTML = PAD_ACTIONS.map((act) => {
+      const wait = cap === act;
+      return `<button class="padkey${wait ? ' wait' : ''}" data-act="${act}"><b>${PAD_LABEL[act]}</b><kbd>${wait ? '按下按键…' : g.input.padLabel(act)}</kbd></button>`;
+    }).join('');
+    for (const b of el.querySelectorAll('.padkey')) {
+      b.onclick = () => {
+        const act = b.dataset.act;
+        if (g.input.capturing === act) g.input.cancelPadCapture();
+        else {
+          g.input.beginPadCapture(act);
+          // give up rather than leave a live capture armed for an unseen button press
+          clearTimeout(this._capT);
+          this._capT = setTimeout(() => { g.input.cancelPadCapture(); this.renderPadMap(); }, 6200);
+        }
+        this.renderPadMap();
+      };
+    }
+    const state = $('padState');
+    if (state) state.textContent = g.input.padActive || g.input.padConnected ? '已连接 · 点按键再按手柄' : '未检测到手柄';
   }
 
   openHub(tab = 'expedition') {
@@ -304,12 +344,13 @@ class HubUI {
     $('qualitySel').value = String(s.quality);
     $('invertChk').checked = !!s.invert;
     $('dmgChk').checked = !!s.dmgNums;
+    this.renderPadMap();
     $('btnRevive') && ($('btnRevive').style.display = '');
   }
 
   renderHelp() {
     $('helpKeys').innerHTML = KEY_HELP.map(([k, v]) => `<kbd>${k}</kbd><span>${v}</span>`).join('');
-    $('helpPad').innerHTML = PAD_HELP.map(([k, v]) => `<kbd>${k}</kbd><span>${v}</span>`).join('');
+    $('helpPad').innerHTML = padHelpRows(this.game.input).map(([k, v]) => `<kbd>${k}</kbd><span>${v}</span>`).join('');
     $('helpRules').innerHTML = RULES.map((r) => `<li>${r}</li>`).join('');
   }
 }

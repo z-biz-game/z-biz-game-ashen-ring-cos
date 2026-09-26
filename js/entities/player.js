@@ -412,8 +412,10 @@ export class Player {
   }
 
   regenerate(dt, game) {
-    const attackLock = this.busy || this.recentHit > 0;
-    const rate = this.sprinting ? 0 : this.state === 'block' ? this.s.staminaRegen * 0.28 : (attackLock ? this.s.staminaRegen * 0.46 : this.s.staminaRegen);
+    // roll is not `busy` (that getter also gates turning and root motion), but it is
+    // still an action: at full regen a 0.5 s roll pays its own 20 back and dodging is free
+    const actionLock = this.busy || this.state === 'roll' || this.recentHit > 0;
+    const rate = this.sprinting ? 0 : this.state === 'block' ? this.s.staminaRegen * 0.28 : (actionLock ? this.s.staminaRegen * 0.46 : this.s.staminaRegen);
     this.stamina = Math.min(this.s.staminaMax, this.stamina + rate * dt);
     this.fp = Math.min(this.s.fpMax, this.fp + this.s.fpRegen * dt);
     this.poise = Math.min(this.s.poiseMax, this.poise + this.s.poiseMax * 0.35 * dt);
@@ -537,6 +539,7 @@ export class Player {
     if (!guarded) {
       game.audio.play('hurt', { vol: 0.9 });
       game.view.shake(info.heavy ? 1.7 : 1.05, 0.26);
+      game.input.rumble(0.35, info.heavy ? 0.85 : 0.4, info.heavy ? 220 : 120);
       game.hud.hitFlash();
       game.damageNumber(this.pos, String(dmg), 'player');
       if (info.dirX !== undefined) {
@@ -563,6 +566,7 @@ export class Player {
     game.audio.play('parry');
     game.hitStop(0.14);
     game.view.shake(1.7);
+    game.input.rumble(0.45, 0.7, 110);
     game.view.burst(
       (this.pos.x + attacker.pos.x) / 2, this.pos.y + 1.3, (this.pos.z + attacker.pos.z) / 2,
       { count: 40, color: '#fff2c0', speed: 9, life: 0.42, gravity: -6, size: 0.7 }
