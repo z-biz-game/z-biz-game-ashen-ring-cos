@@ -74,11 +74,18 @@ rows=d.get('rows',[])
 print('rows:',len(rows),'fail:',d.get('fail'))
 tb=d.get('table')
 if tb:
-    print('  %-9s %-3s %-2s %-8s %-17s %5s %5s %6s %6s %6s %5s' % ('kind','dp','n','skill','relic','win%','ttk','dealt','took','drink','starv'))
-    for r in tb:
-        print('  %-9s %-3s %-2s %-8s %-17s %5.0f %5.1f %6d %6d %6.1f %5.1f%s' % (r['kind'],r['depth'],r.get('foes',1),r['skill'],r['relic'],r['winRate']*100,r['ttk'],r['dealt'],r['took'],r['drank'],r['starved'],' TIMEOUT' if r['timeouts'] else ''))
-    for r in d.get('bosses',[]):
-        print('  %-9s %-3s %-2s %-8s %-17s %5.0f %5.1f %6d %6d %6.1f %5.1f%s' % ('BOSS',r['depth'],r.get('foes',1),r['skill'],r['relic'],r['winRate']*100,r['ttk'],r['dealt'],r['took'],r['drank'],r['starved'],' TIMEOUT' if r['timeouts'] else ''))
+    print('  %-7s %-2s %-8s %-17s %-15s %5s %5s %5s %5s %6s %6s %6s %5s' % ('kind','dp','skill','relic','pack','win%','sur%','attr','ttk','dealt','took','drink','starv'))
+    def row(r, kind=None):
+        print('  %-7s %-2s %-8s %-17s %-15s %5.0f %5.0f %6.2f %5.1f %6d %6d %6.1f %5.1f%s' % (kind or r['kind'], r['depth'], r['skill'], r['relic'], r.get('pack',''), r['winRate']*100, r['surviveRate']*100, r['attr'], r['ttk'], r['dealt'], r['took'], r['drank'], r['starved'], ' TIMEOUT' if r['timeouts'] else ''))
+    for r in tb: row(r)
+    for r in d.get('bosses',[]): row(r, 'BOSS')
+    if d.get('bossGreen'): row(d['bossGreen'], 'BOSS')
+    dp=d.get('dps')
+    if dp:
+        base=dp[0]['dps'] or 1
+        print('  damage meter, 12s on an invincible dummy (baseline %s dps):' % base)
+        for r in dp:
+            print('  %-17s %6.1f %6.2fx  swings=%d starved=%.1fs' % (r['relic'], r['dps'], r['dps']/base, r['swings'], r['starved']))
     print('  duels:',d.get('duels'))
 for r in rows:
     if not r['pass']: print('  FAIL', r['test'], json.dumps(r['detail'])[:220])

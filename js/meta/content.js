@@ -837,7 +837,7 @@ export const DEPTH_MODIFIERS = [
     depth: 2,
     cn: '溃信圣所',
     name: 'Fallen Reliquary',
-    enemyMul: { hp: 1.22, dmg: 1.16, count: 1 },
+    enemyMul: { hp: 1.3, dmg: 1.26, count: 1 },
     tint: '#57343f',
     boss: '双面忏悔者'
   },
@@ -845,7 +845,7 @@ export const DEPTH_MODIFIERS = [
     depth: 3,
     cn: '王冠之心',
     name: 'Heart of the Ring',
-    enemyMul: { hp: 1.5, dmg: 1.38, count: 3 },
+    enemyMul: { hp: 1.65, dmg: 1.55, count: 2 },
     tint: '#2f2450',
     boss: '灰烬王 · 环中无名者'
   }
