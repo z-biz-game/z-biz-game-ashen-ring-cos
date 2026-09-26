@@ -31,10 +31,28 @@ trap cleanup EXIT
 # timeout and stall the consumer long after the tests finished.
 ( sleep 420; cleanup ) </dev/null >/dev/null 2>&1 & WD=$!
 
+# A fresh --user-data-dir binds DevTools noticeably later than a warm profile,
+# so wait on the endpoint rather than guessing a sleep duration.
+for i in $(seq 1 60); do
+  curl -fsS -m 1 "http://127.0.0.1:$PORT/json/version" >/dev/null 2>&1 && break
+  sleep 0.5
+done
+curl -fsS -m 2 "http://127.0.0.1:$PORT/json/version" >/dev/null 2>&1 || {
+  echo "devtools never bound on :$PORT" >&2; exit 3; }
+
 export CDP_PORT=$PORT
 export BASE_URL=$BASE
 cd "$HERE"
 node tools/playtest.mjs open "$BASE" | head -3
+# The scenarios read window.ashen directly, and the driver only waits 2.2 s after
+# navigating — enough for a local server, not for a CDN serving 750 KB of vendor.
+BOOT=""
+for i in $(seq 1 60); do
+  BOOT=$(node tools/playtest.mjs eval "window.ashen?window.ashen.state:'nope'" nonav 2>/dev/null | tr -d '\n" ')
+  case "$BOOT" in *nope*|"") sleep 0.5 ;; *) break ;; esac
+done
+echo "boot state: $BOOT"
+[ "$BOOT" = "nope" ] && { echo "window.ashen never appeared at $BASE" >&2; exit 4; }
 # The loop skips frames on a hidden page (by design) and headless reports hidden.
 node tools/playtest.mjs eval "Object.defineProperty(document,'hidden',{get:()=>false,configurable:true});Object.defineProperty(document,'visibilityState',{get:()=>'visible',configurable:true});'visible'" nonav >/dev/null 2>&1
 FAILED=0
