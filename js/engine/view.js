@@ -1,7 +1,18 @@
 import * as THREE from 'three';
+import { EffectComposer } from '../../vendor/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from '../../vendor/jsm/postprocessing/RenderPass.js';
+import { ShaderPass } from '../../vendor/jsm/postprocessing/ShaderPass.js';
+import { UnrealBloomPass } from '../../vendor/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from '../../vendor/jsm/postprocessing/OutputPass.js';
 import { clamp, damp, RNG } from './rng.js';
 
 const cache = {};
+
+export const QUALITY = {
+  0: { name: 'low', pixel: 1, shadow: 0, shadowSpan: 46, bloom: 0, grade: 0.45, particles: 0.45, motes: 0.3, lamps: 4, torch: 9 },
+  1: { name: 'medium', pixel: 1.35, shadow: 1024, shadowSpan: 34, bloom: 0.42, grade: 0.8, particles: 0.75, motes: 0.7, lamps: 7, torch: 12 },
+  2: { name: 'high', pixel: 1.75, shadow: 2048, shadowSpan: 26, bloom: 0.68, grade: 1, particles: 1, motes: 1, lamps: 7, torch: 13 },
+};
 
 export function glowTexture(key, inner = 'rgba(255,236,190,1)', outer = 'rgba(255,180,60,0)') {
   if (cache[key]) return cache[key];
@@ -58,6 +69,9 @@ class ParticlePool {
   constructor(capacity, blending = THREE.AdditiveBlending, texKey = 'soft') {
     this.capacity = capacity;
     this.head = 0;
+    this.live = 0;
+    this.drop = 0;
+    this._uploaded = 0;
     this.pos = new Float32Array(capacity * 3);
     this.col = new Float32Array(capacity * 3);
     this.size = new Float32Array(capacity);
@@ -95,8 +109,9 @@ void main(){ if(vA<=0.001) discard; vec4 t=texture2D(uTex,gl_PointCoord); gl_Fra
   }
 
   emit(x, y, z, o) {
-    const i = this.head;
-    this.head = (this.head + 1) % this.capacity;
+    let i;
+    if (this.live < this.capacity) i = this.live++;
+    else i = this.drop = (this.drop + 1) % this.capacity;
     const p3 = i * 3;
     this.pos[p3] = x; this.pos[p3 + 1] = y; this.pos[p3 + 2] = z;
     const c = o.color;
@@ -117,9 +132,10 @@ void main(){ if(vA<=0.001) discard; vec4 t=texture2D(uTex,gl_PointCoord); gl_Fra
   }
 
   update(dt) {
-    for (let i = 0; i < this.capacity; i++) {
-      if (this.life[i] <= 0) { if (this.alpha[i] !== 0) { this.alpha[i] = 0; this.size[i] = 0; } continue; }
+    let i = 0;
+    while (i < this.live) {
       this.life[i] -= dt;
+      if (this.life[i] <= 0) { this._recycle(i); continue; }
       const t = clamp(this.life[i] / this.maxLife[i], 0, 1);
       const d = Math.exp(-this.drag[i] * dt);
       this.vx[i] *= d; this.vz[i] *= d;
@@ -130,16 +146,73 @@ void main(){ if(vA<=0.001) discard; vec4 t=texture2D(uTex,gl_PointCoord); gl_Fra
       this.pos[i3 + 2] += this.vz[i] * dt;
       this.alpha[i] = t * t;
       this.size[i] = this.baseSize[i] * (1 + this.grow[i] * (1 - t));
-      if (this.pos[i3 + 1] < 0.02 && this.grav[i] < 0) { this.life[i] = 0; }
+      if (this.pos[i3 + 1] < 0.02 && this.grav[i] < 0) { this._recycle(i); continue; }
+      i++;
     }
-    this.geo.attributes.position.needsUpdate = true;
-    this.geo.attributes.aColor.needsUpdate = true;
-    this.geo.attributes.aSize.needsUpdate = true;
-    this.geo.attributes.aAlpha.needsUpdate = true;
+    if (!this.live) { if (this._uploaded) { this._uploaded = 0; this.geo.setDrawRange(0, 0); } return; }
+    this.geo.setDrawRange(0, this.live);
+    const n3 = this.live * 3, n1 = this.live;
+    const a = this.geo.attributes;
+    a.position.clearUpdateRanges(); a.position.addUpdateRange(0, n3); a.position.needsUpdate = true;
+    a.aColor.clearUpdateRanges(); a.aColor.addUpdateRange(0, n3); a.aColor.needsUpdate = true;
+    a.aSize.clearUpdateRanges(); a.aSize.addUpdateRange(0, n1); a.aSize.needsUpdate = true;
+    a.aAlpha.clearUpdateRanges(); a.aAlpha.addUpdateRange(0, n1); a.aAlpha.needsUpdate = true;
+    this._uploaded = this.live;
   }
 
-  clear() { this.life.fill(0); this.alpha.fill(0); }
+  _recycle(i) {
+    const last = --this.live;
+    if (i !== last) {
+      const i3 = i * 3, l3 = last * 3;
+      this.pos[i3] = this.pos[l3]; this.pos[i3 + 1] = this.pos[l3 + 1]; this.pos[i3 + 2] = this.pos[l3 + 2];
+      this.col[i3] = this.col[l3]; this.col[i3 + 1] = this.col[l3 + 1]; this.col[i3 + 2] = this.col[l3 + 2];
+      this.size[i] = this.size[last]; this.alpha[i] = this.alpha[last];
+      this.vx[i] = this.vx[last]; this.vy[i] = this.vy[last]; this.vz[i] = this.vz[last];
+      this.life[i] = this.life[last]; this.maxLife[i] = this.maxLife[last];
+      this.grav[i] = this.grav[last]; this.drag[i] = this.drag[last];
+      this.grow[i] = this.grow[last]; this.baseSize[i] = this.baseSize[last];
+    }
+    this.alpha[last] = 0; this.size[last] = 0; this.life[last] = 0;
+  }
+
+  clear() {
+    this.life.fill(0); this.alpha.fill(0); this.size.fill(0);
+    this.live = 0; this.drop = 0; this._uploaded = 0;
+    this.geo.setDrawRange(0, 0);
+  }
 }
+
+const GradeShader = {
+  name: 'GradeShader',
+  uniforms: {
+    tDiffuse: { value: null },
+    uTime: { value: 0 },
+    uVig: { value: 1 },
+    uGrain: { value: 0.05 },
+    uSat: { value: 1.05 },
+    uTone: { value: 1 },
+  },
+  vertexShader: `varying vec2 vUv;
+void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime, uVig, uGrain, uSat, uTone;
+varying vec2 vUv;
+float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+void main(){
+  vec2 uv = vUv;
+  vec3 c = texture2D(tDiffuse, uv).rgb;
+  float r2 = dot(uv - 0.5, uv - 0.5) * 2.6;
+  c.r = texture2D(tDiffuse, uv + (uv - 0.5) * r2 * 0.0026).r;
+  c.b = texture2D(tDiffuse, uv - (uv - 0.5) * r2 * 0.0026).b;
+  float l = dot(c, vec3(0.2125, 0.7154, 0.0721));
+  c = mix(vec3(l), c, uSat);
+  c *= mix(vec3(0.84, 0.94, 1.18), vec3(1.14, 1.01, 0.82), clamp(l * 1.5, 0.0, 1.0) * uTone);
+  float vig = 1.0 - smoothstep(0.3, 1.5, r2) * 0.5 * uVig;
+  c *= vec3(vig);
+  float g = hash(gl_FragCoord.xy + vec2(0.0, fract(uTime) * 431.0));
+  c += (g - 0.5) * uGrain * (0.16 + min(l, 1.2));
+  gl_FragColor = vec4(c, 1.0);
+}`,
+};
 
 export class View {
   constructor(canvas) {
@@ -176,10 +249,18 @@ export class View {
     this.lampPool = [];
     for (let i = 0; i < 7; i++) {
       const l = new THREE.PointLight('#ffab52', 0, 13, 2);
-      l.visible = false;
+      // kept visible with zero intensity: toggling light visibility rebuilds every
+      // material program mid-run, which is what the per-room lamp swap used to do
+      l.intensity = 0;
       this.scene.add(l);
       this.lampPool.push(l);
     }
+    // carried ember: rooms are walled and self-shadowing, so without a light that
+    // rides with the player the far corners collapse to pure black
+    this.torch = new THREE.PointLight('#ff9d55', 0, 12, 2);
+    this._torchAt = new THREE.Vector3();
+    this._torchInt = this.preset?.torch ?? 12;
+    this.scene.add(this.torch);
 
     this.skyMat = new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false, fog: false,
@@ -222,7 +303,16 @@ gl_FragColor=vec4(col,1.0); }`,
     this.motes = 0;
     this.time = 0;
     this.quality = 1;
+    this.preset = QUALITY[1];
     this._camOffset = new THREE.Vector3();
+    this._sunFocus = new THREE.Vector3();
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.5, 0.55, 0.85);
+    this.composer.addPass(this.bloom);
+    this.grade = new ShaderPass(GradeShader);
+    this.composer.addPass(this.grade);
+    this.composer.addPass(new OutputPass());
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -235,6 +325,8 @@ gl_FragColor=vec4(col,1.0); }`,
     const px = this.renderer.getPixelRatio();
     this.sparks.mat.uniforms.uPixel.value = px;
     this.smoke.mat.uniforms.uPixel.value = px;
+    this.composer.setPixelRatio(px);
+    this.composer.setSize(w, h);
   }
 
   setMood({ top, bot, glow, fogColor, fogDensity, sunColor, sunInt, hemiInt, star }) {
@@ -252,29 +344,30 @@ gl_FragColor=vec4(col,1.0); }`,
   setWorldCenter(x, z) {
     this.tree.position.set(x - 6, 40, z - 74);
     this.tree.lookAt(x, 30, z);
-    this.sunTarget = new THREE.Vector3(x, 0, z);
   }
 
+  followTorch(x, y, z) { this._torchAt.set(x, y + 1.35, z); }
+
   followSun(px, py, pz) {
-    const t = this.sunTarget || this.sunTargetPos;
-    if (!t) return;
-    this.sun.target.position.copy(t);
-    this.sun.position.set(t.x + 22, t.y + 34, t.z + 16);
+    // the shadow frustum is tight, so it has to ride with the player rather than
+    // sit at the room centre
+    this._sunFocus.set(px, 0, pz);
+    this.sun.target.position.copy(this._sunFocus);
+    this.sun.position.set(px + 18, 34, pz + 14);
     this.sky.position.set(px, 0, pz);
   }
 
   setLamps(list) {
-    const n = Math.min(list.length, this.lampPool.length);
+    const budget = Math.min(this.preset.lamps, this.lampPool.length);
     for (let i = 0; i < this.lampPool.length; i++) {
       const l = this.lampPool[i];
-      if (i < n) {
-        const s = list[i];
-        l.visible = true;
+      const s = i < budget ? list[i] : null;
+      if (s) {
         l.position.set(s.x, s.y, s.z);
         l.color.set(s.color || '#ffab52');
         l.intensity = s.intensity ?? 16;
         l.distance = s.distance ?? 13;
-      } else l.visible = false;
+      } else l.intensity = 0;
     }
     this._lampFlicker = list;
   }
@@ -342,21 +435,47 @@ gl_FragColor=vec4(col,1.0); }`,
       const l = this.lampPool[i];
       if (!l.visible) continue;
       const src = this._lampFlicker?.[i];
+      if (!src) { if (l.intensity !== 0) l.intensity = 0; continue; }
       const f = 0.82 + 0.18 * Math.sin(this.time * (7 + i * 1.7) + i) + 0.08 * Math.sin(this.time * 23.5 + i * 3.3);
       l.intensity = (src?.intensity ?? 16) * f * (src?.fade ?? 1);
     }
+    const tf = 0.85 + 0.11 * Math.sin(this.time * 8.7) + 0.07 * Math.sin(this.time * 21.3);
+    this.torch.intensity = this._torchInt * tf;
+    this.torch.position.copy(this._torchAt);
   }
 
   render() {
     this.camera.position.add(this._camOffset);
-    this.renderer.render(this.scene, this.camera);
+    this.grade.uniforms.uTime.value = this.time;
+    this.composer.render();
     this.camera.position.sub(this._camOffset);
   }
 
   setQuality(level) {
-    this.quality = level;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, level >= 1 ? 1.7 : 1));
-    this.renderer.shadowMap.enabled = level > 0;
+    const p = QUALITY[level] || QUALITY[1];
+    this.preset = p;
+    this.qualityLevel = level;
+    this.quality = p.particles;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, p.pixel));
+    this.renderer.shadowMap.enabled = p.shadow > 0;
+    this.sun.castShadow = p.shadow > 0;
+    if (p.shadow > 0 && this.sun.shadow.mapSize.x !== p.shadow) {
+      this.sun.shadow.mapSize.set(p.shadow, p.shadow);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+    }
+    const sc = this.sun.shadow.camera;
+    const span = p.shadowSpan;
+    sc.left = -span; sc.right = span; sc.top = span; sc.bottom = -span;
+    sc.near = 1; sc.far = 120;
+    sc.updateProjectionMatrix();
+    this.bloom.enabled = p.bloom > 0;
+    this.bloom.strength = p.bloom;
+    this.grade.uniforms.uGrain.value = p.grade * 0.055;
+    this.grade.uniforms.uVig.value = 0.42 + p.grade * 0.3;
+    this.grade.uniforms.uSat.value = 1 + p.grade * 0.07;
+    this.grade.uniforms.uTone.value = p.grade;
+    this._torchInt = p.torch;
     this.resize();
   }
 

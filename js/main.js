@@ -25,11 +25,21 @@ const HINTS = {
   backstab: '敌人未察觉时从背后重击 = 背刺，伤害翻倍',
 };
 
-const ROOM_MOBS = {
-  1: [['hollow', 5], ['knight', 2], ['archer', 2], ['wraith', 1]],
+const ROOM_MOBS = {  1: [['hollow', 5], ['knight', 2], ['archer', 2], ['wraith', 1]],
   2: [['hollow', 4], ['knight', 3], ['archer', 3], ['wraith', 2], ['zealot', 2], ['guard', 1]],
   3: [['knight', 3], ['wraith', 3], ['archer', 2], ['zealot', 2], ['guard', 3], ['hollow', 2]],
 };
+
+function disposeMesh(obj) {
+  obj.parent?.remove(obj);
+  obj.traverse((o) => {
+    if (!o.isMesh && !o.isPoints && !o.isLine) return;
+    o.geometry?.dispose();
+    const m = o.material;
+    if (Array.isArray(m)) m.forEach((x) => x?.dispose());
+    else m?.dispose();
+  });
+}
 
 class Game {
   constructor(canvas) {
@@ -118,9 +128,9 @@ class Game {
 
   setGateCells(layoutRoom, solid) {
     const g = layoutRoom.grid;
+    const cx = g.cx(layoutRoom.gate.x);
     for (let dz = -2; dz <= 2; dz++) {
-      const cx = g.cx(layoutRoom.entry.x + g.cell * 1.1);
-      g.set(cx, g.cz(layoutRoom.entry.z) + dz, solid ? CELL.PILLAR : CELL.FLOOR);
+      g.set(cx, g.cz(layoutRoom.gate.z) + dz, solid ? CELL.PILLAR : CELL.FLOOR);
     }
   }
 
@@ -128,8 +138,8 @@ class Game {
     for (const e of this.enemies) e.dispose?.();
     for (const a of this.ashes) a.dispose?.();
     for (const p of this.projectiles) p.destroy?.(this);
-    for (const o of this.pickups) o.mesh.parent?.remove(o.mesh);
-    for (const h of this.hazards) h.mesh.parent?.remove(h.mesh);
+    for (const o of this.pickups) disposeMesh(o.mesh);
+    for (const h of this.hazards) disposeMesh(h.mesh);
     this.enemies = []; this.ashes = []; this.projectiles = []; this.pickups = []; this.hazards = [];
     this.lockTarget = null;
     this.view.clearParticles();
@@ -190,17 +200,26 @@ class Game {
     this.clearActors();
     const entry = layoutRoom.entry;
     if (this.player) {
-      this.player.pos.set(entry.x, 0.1, entry.z);
+      const g = layoutRoom.grid;
+      let ex = entry.x, ez = entry.z;
+      // the doorway cell is flush against the boundary wall, which left the
+      // third-person camera no standoff; step inward until the wall is behind us
+      for (let i = 0; i < 8 && ex - entry.x < 2.4; i++) {
+        if (g.blocked(ex + 0.4, ez, this.player.radius, 0.1)) break;
+        ex += 0.4;
+      }
+      this.player.pos.set(ex, 0.1, ez);
       this.player.vel.set(0, 0, 0);
-      this.player.yaw = Math.PI / 2;
+      this.player.yaw = entry.yaw;
       this.player.state = 'idle';
       this.player.dead = false;
       this.player.alive = true;
       this.player.mesh.visible = true;
       this.player.mesh.rotation.set(0, this.player.yaw, 0);
       this.view.scene.add(this.player.mesh);
-      this.rig.yaw = 0;
+      this.rig.yaw = entry.yaw + Math.PI;
       this.rig.pitch = -0.2;
+      this.rig.dist = this.rig.wantDist;
       this.rig.focus.copy(this.player.pos).setY(1.3);
     }
     this.populate(rng, spec, layoutRoom);
@@ -603,7 +622,10 @@ class Game {
     const room = this.room;
     const out = [];
     if (room.gracePos) out.push({ kind: 'grace', pos: room.gracePos, text: this.run.graceAt ? '休息（重生敌人）' : '休息', key: 'F', d: Math.hypot(p.x - room.gracePos.x, p.z - room.gracePos.z) });
-    if (room.gate.visible) out.push({ kind: 'gate', pos: { x: room.room.entry.x + room.room.grid.cell, z: room.room.entry.z }, text: '进入雾门', key: 'F', d: Math.hypot(p.x - room.room.entry.x - room.room.grid.cell, p.z - room.room.entry.z) });
+    if (room.gate.visible) {
+      const gp = room.room.gate;
+      out.push({ kind: 'gate', pos: gp, text: '进入雾门', key: 'F', d: Math.hypot(p.x - gp.x, p.z - gp.z) });
+    }
     for (const pk of this.pickups) if (!pk.taken && !pk.orb) out.push({ kind: pk.kind, src: pk, pos: pk.pos, mesh: pk.mesh, text: pk.kind === 'shrine' ? '取走圣物' : pk.kind === 'blood' ? '取回失落的灰烬' : '开启匣子', key: 'F', d: Math.hypot(p.x - pk.pos.x, p.z - pk.pos.z) });
     const ex = room.room.exit;
     out.push({ kind: 'portal', pos: ex, text: this.portalOpen ? (this.roomSpec.type === 'boss' ? '下潜一层' : '进入下一间') : '被阻挡 · 需肃清此间', key: 'F', blocked: !this.portalOpen, d: Math.hypot(p.x - ex.x, p.z - ex.z) });
@@ -625,18 +647,18 @@ class Game {
     }
     if (t.kind === 'blood') {
       t.src.taken = true;
-      t.mesh.parent?.remove(t.mesh);
+      disposeMesh(t.mesh);
       this.recoverBloodstain();
       return;
     }
     if (t.kind === 'shrine') {
       t.src.taken = true;
-      t.mesh.parent?.remove(t.mesh);
+      disposeMesh(t.mesh);
       return this.offerDraft({ title: '圣物圣坛', sub: '坛上余温尚存。' });
     }
     if (t.kind === 'chest') {
       t.src.taken = true;
-      t.mesh.parent?.remove(t.mesh);
+      disposeMesh(t.mesh);
       this.audio.play('chestOpen');
       this.runesBurst(80 + this.run.depth * 60, t.pos);
       if (this.rng.chance(0.4)) this.offerDraft({ title: '匣中之赐', sub: '匣底还压着一件圣物。', count: 3 });
@@ -691,11 +713,12 @@ class Game {
     if (this.lockTarget && (!this.lockTarget.alive || this.lockTarget.dead)) this.setLock(null);
     const target = this.player;
     this.rig.update(dt, target, this.room.grid, this.lockTarget);
+    this.view.followTorch(this.player.pos.x, this.player.pos.y, this.player.pos.z);
     this.room.update(this.time);
     this._lampT -= dt;
     if (this._lampT <= 0) {
       this._lampT = 0.25;
-      this.view.setLamps(this.room.nearestLamps(this.player.pos, this.view.lampPool.length));
+      this.view.setLamps(this.room.nearestLamps(this.player.pos, this.view.preset.lamps));
     }
     this.view.followSun(this.view.camera.position.x, this.view.camera.position.y, this.view.camera.position.z);
     this.view.update(dt, this.view.camera.position);
@@ -723,7 +746,7 @@ class Game {
         pk.mesh.position.y = (pk.kind === 'shrine' ? 1.25 : pk.kind === 'blood' ? 0.7 : 0.55) + Math.sin(this.time * 1.6) * 0.08;
         if (pk.kind === 'blood' && Math.hypot(p.x - pk.pos.x, p.z - pk.pos.z) < 0.75) {
           pk.taken = true;
-          pk.mesh.parent?.remove(pk.mesh);
+          disposeMesh(pk.mesh);
           this.recoverBloodstain();
         }
         continue;
@@ -745,10 +768,10 @@ class Game {
         const gain = this.addRunes(pk.value);
         this.audio.play('runeGain', { vol: 0.5, rate: 0.9 + Math.random() * 0.3 });
         this.damageNumber(this.player.pos, '+' + gain, 'rune');
-        pk.mesh.parent?.remove(pk.mesh);
+        disposeMesh(pk.mesh);
       } else if (pk.life <= 0) {
         pk.taken = true;
-        pk.mesh.parent?.remove(pk.mesh);
+        disposeMesh(pk.mesh);
       }
     }
     this.pickups = this.pickups.filter((pk) => !pk.taken);
@@ -757,7 +780,7 @@ class Game {
   recoverBloodstain() {
     const b = this.run.bloodstain;
     if (!b) return;
-    this.run.runes = b.amount;
+    this.run.runes += b.amount;
     this.run.bloodstain = null;
     this.hud.toast('取回灰烬', 'RUNES RECLAIMED', 'crit');
     this.audio.play('boonPickup');
@@ -819,7 +842,7 @@ class Game {
     this.view.camera.position.set(g.x + Math.cos(this.menuAngle) * r, 3.2 + Math.sin(this.menuAngle * 0.7) * 0.8, g.z + Math.sin(this.menuAngle) * r);
     this.view.camera.lookAt(g.x, 1.35, g.z);
     if (Math.random() < dt * 12) this.view.burst(g.x + (Math.random() - 0.5) * 1.2, 0.4, g.z + (Math.random() - 0.5) * 1.2, { count: 1, color: '#ffd487', speed: 0.6, life: 2.2, up: 1.5, gravity: 0.2 });
-    this.view.setLamps(this.room.nearestLamps(this.view.camera.position, 5));
+    this.view.setLamps(this.room.nearestLamps(this.view.camera.position, Math.min(5, this.view.preset.lamps)));
     this.room.update(this.time);
     this.view.followSun(this.view.camera.position.x, 0, this.view.camera.position.z);
     this.view.update(dt, this.view.camera.position);
@@ -827,8 +850,14 @@ class Game {
 
   loop(ts) {
     requestAnimationFrame(this.loop);
-    const raw = Math.min(0.048, (ts - this._last) / 1000 || 0.016);
+    // damp() diverges on a negative delta, and out-of-order timestamps do happen
+    // when a frame is driven manually from the test harness
+    const d = (ts - this._last) / 1000;
+    const raw = Math.min(0.048, d > 0 ? d : 0.016);
     this._last = ts;
+    // nothing is watching, so nothing should be rasterised: rAF keeps firing in
+    // headless and occluded contexts, and a souls-like sim has no meaning there
+    if (typeof document !== 'undefined' && document.hidden) return;
     if (this.state === 'playing' || this.state === 'dying') {
       let dt = raw;
       if (this.hitStopT > 0) { this.hitStopT -= raw; dt = raw * 0.09; }

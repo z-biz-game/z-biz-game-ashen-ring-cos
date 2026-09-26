@@ -60,7 +60,7 @@ export class CameraRig {
     const want = this.wantDist + sprint + aiming * 0.35 + this.lockBlend * 0.25 + (actor.height - 1.7) * 0.6;
     let allow = want;
     if (grid) allow = Math.min(allow, this._clearDistance(grid, this.focus, this.yaw, this.pitch, want));
-    this.dist = damp(this.dist, Math.max(1.5, allow), 12, dt);
+    this.dist = damp(this.dist, Math.max(2.1, allow), 12, dt);
 
     const cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
     this.pos.set(
@@ -85,7 +85,7 @@ export class CameraRig {
     const dx = Math.sin(yaw) * cp, dy = -sp, dz = Math.cos(yaw) * cp;
     const step = 0.22;
     for (let d = 0.6; d < want; d += step) {
-      if (grid.solidAtWorld(from.x + dx * d, from.z + dz * d, from.y + dy * d + 0.2)) return Math.max(1.6, d - 0.35);
+      if (grid.solidAtWorld(from.x + dx * d, from.z + dz * d, from.y + dy * d + 0.2)) return Math.max(2.1, d - 0.4);
     }
     return want;
   }

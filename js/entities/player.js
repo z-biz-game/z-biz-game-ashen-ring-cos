@@ -151,8 +151,9 @@ export class Player {
     if (this.buffs.length !== before) this.refreshStats();
   }
 
+  // stat names here are 'stamina'/'fp' — the resource pools, not `s` keys
+  // (which spell them staminaMax/fpMax), so there is no "unknown stat" to skip
   spend(stat, amount) {
-    if (this.s[stat] === undefined) return true;
     if (stat === 'stamina') { if (this.stamina < amount) return false; this.stamina -= amount; return true; }
     if (stat === 'fp') { if (this.fp < amount) return false; this.fp -= amount; return true; }
     return true;
