@@ -1,0 +1,38 @@
+{
+  "name": "ashen-ring",
+  "version": "1.0.0",
+  "description": "灰烬王冠 Ashen Ring — 浏览器原生 3D 魂系肉鸽. 程序化地城 / 无敌帧翻滚 / 完美弹反 / 营火轮回 / 圣物三选一 / 三场首领战.",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "start": "node server.cjs",
+    "dev": "node server.cjs 5173",
+    "electron": "electron .",
+    "check": "for f in js/*.js js/*/*.js vendor/three.module.js; do node --check \"$f\" || exit 1; done && echo OK"
+  },
+  "keywords": [
+    "game",
+    "3d",
+    "threejs",
+    "roguelike",
+    "souls-like",
+    "webgl",
+    "procedural",
+    "electron"
+  ],
+  "author": "z-biz-game",
+  "license": "MIT",
+  "dependencies": {
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  },
+  "build": {
+    "appId": "com.zbiz.ashenring",
+    "productName": "Ashen Ring",
+    "mac": { "category": "public.app-category.games" },
+    "win": { "target": "nsis" },
+    "linux": { "target": "AppImage" }
+  }
+}
