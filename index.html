@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>灰烬王冠 Ashen Ring — 3D 魂系肉鸽</title>
+<meta name="description" content="Ashen Ring: a browser-native 3D souls-like roguelike. Procedural depths, i-frame rolls, perfect parries, grace sites, relic drafts, three bosses." />
+<link rel="stylesheet" href="./css/hud.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%E2%9A%94%3C/text%3E%3C/svg%3E" />
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js" } }
+</script>
+</head>
+<body>
+<div id="app">
+  <canvas id="gl"></canvas>
+  <div id="grain"></div>
+
+  <div id="hud" class="hidden">
+    <div id="topbar">
+      <div class="tb-left">
+        <span id="depthLabel" class="tag">第一层 · 余烬回廊</span>
+        <span id="roomLabel" class="tag dim">回廊 1/6</span>
+      </div>
+      <div class="tb-right">
+        <span class="rune-icon">◈</span><span id="runesNow">0</span>
+        <span class="dim" id="runesLost"></span>
+      </div>
+    </div>
+
+    <div id="vitals">
+      <div class="bar hp"><i id="hpGhost"></i><b id="hpFill"></b><span id="hpText">100/100</span></div>
+      <div class="bar st"><b id="stFill"></b></div>
+      <div class="bar fp hidden"><b id="fpFill"></b></div>
+      <div id="flasks">
+        <div id="estusPips" class="pips"></div>
+        <div id="spellPips" class="pips small"></div>
+        <div id="ashPip" class="pip ash hidden" title="灰烬召唤"></div>
+      </div>
+    </div>
+
+    <div id="relicList"></div>
+
+    <div id="minimap"><canvas id="minimapCanvas" width="150" height="150"></canvas><span class="mm-label">遗迹图</span></div>
+
+    <div id="bossbar" class="hidden">
+      <div class="boss-name"><span id="bossName">灰烬守门人</span><small id="bossSub"></small></div>
+      <div class="boss-track"><i id="bossGhost"></i><b id="bossFill"></b></div>
+      <div class="boss-pips" id="bossPips"></div>
+    </div>
+
+    <div id="reticle" class="hidden"><div id="lockRing"></div></div>
+    <div id="crosshair"></div>
+    <div id="interactPrompt" class="hidden"><kbd id="interactKey">F</kbd><span id="interactText">休息</span></div>
+    <div id="centerHint" class="hidden"></div>
+    <div id="toasts"></div>
+    <div id="dmgNums"></div>
+    <div id="flash"></div>
+    <div id="stamFlash"></div>
+    <div id="poiseBar" class="hidden"><b id="poiseFill"></b></div>
+  </div>
+
+  <div id="screens">
+    <section class="screen" id="title">
+      <div class="title-inner">
+        <div class="crest">⚔</div>
+        <h1>灰烬王冠</h1>
+        <p class="sub">ASHEN&nbsp;RING&nbsp;·&nbsp;3D SOULS-LIKE ROGUELIKE</p>
+        <p class="lore">王冠碎成三次轮回。你带着同一副残铠，从余烬里再站起来——<br />这一次， depth 会更深，雾会更浓。</p>
+        <div class="title-actions">
+          <button class="btn primary" id="btnStart">进入圆桌厅</button>
+          <button class="btn" id="btnHelp">操作说明</button>
+          <button class="btn" id="btnSettings">设置</button>
+        </div>
+        <div class="seed-row">
+          <label for="seedInput">命运种子</label>
+          <input id="seedInput" placeholder="留空则随机" maxlength="12" spellcheck="false" />
+          <span id="titleStats" class="dim"></span>
+        </div>
+        <p class="foot dim">需 WebGL2 · 键鼠或手柄 · 进度保存在本地</p>
+      </div>
+    </section>
+
+    <section class="screen hidden" id="hub">
+      <header class="hub-head">
+        <div>
+          <h2>圆桌厅 · Round Table</h2>
+          <p class="dim">死亡带回的灰烬印记在此刻进骨血。选择你的残铠，踏入轮回。</p>
+        </div>
+        <div class="marks">
+          <span class="dim">灰烬印记</span>
+          <strong id="markCount">0</strong>
+        </div>
+      </header>
+      <nav class="tabs">
+        <button class="tab active" data-tab="expedition">出征</button>
+        <button class="tab" data-tab="bloodline">血脉强化</button>
+        <button class="tab" data-tab="bindings">命运枷锁</button>
+        <button class="tab" data-tab="codex">纪功碑</button>
+      </nav>
+      <div class="tab-body" id="tab-expedition"></div>
+      <div class="tab-body hidden" id="tab-bloodline"></div>
+      <div class="tab-body hidden" id="tab-bindings"></div>
+      <div class="tab-body hidden" id="tab-codex"></div>
+      <footer class="hub-foot">
+        <div class="legend" id="hubLegend"></div>
+        <div class="hub-actions">
+          <button class="btn" id="btnHubBack">返回</button>
+          <button class="btn primary" id="btnRun">踏入轮回 ⚔</button>
+        </div>
+      </footer>
+    </section>
+
+    <section class="screen draft hidden" id="draft">
+      <h2 id="draftTitle">圣物抉择</h2>
+      <p class="dim" id="draftSub">取走其一，其余散为灰烬。</p>
+      <div class="cards" id="draftCards"></div>
+      <div class="draft-foot">
+        <button class="btn small" id="btnReroll">重抽 (<span id="rerollN">0</span>)</button>
+        <span class="dim">1 / 2 / 3 号键快速选择</span>
+      </div>
+    </section>
+
+    <section class="screen hidden" id="dead">
+      <div class="died">YOU&nbsp;DIED</div>
+      <div class="died-cn">你死了</div>
+      <div class="dead-stats" id="deadStats"></div>
+      <div class="dead-actions">
+        <button class="btn primary" id="btnRevive">复归灰烬（消耗 1 次复活）</button>
+        <button class="btn" id="btnToHub">回到圆桌厅</button>
+      </div>
+    </section>
+
+    <section class="screen hidden" id="win">
+      <div class="died victory">THE RING REFUSED</div>
+      <div class="died-cn">王冠拒绝被戴上</div>
+      <div class="dead-stats" id="winStats"></div>
+      <div class="dead-actions"><button class="btn primary" id="btnWinHub">回到圆桌厅</button></div>
+    </section>
+
+    <section class="screen hidden" id="pause">
+      <div class="pause-inner">
+        <h2>暂停</h2>
+        <div class="pause-grid">
+          <div class="pg-col">
+            <h3 class="mini">操作</h3>
+            <div id="ctrlList" class="ctrl-list"></div>
+          </div>
+          <div class="pg-col">
+            <h3 class="mini">设置</h3>
+            <label class="opt"><span>主音量</span><input type="range" id="volRange" min="0" max="100" value="70" /></label>
+            <label class="opt"><span>画质</span>
+              <select id="qualitySel">
+                <option value="2">高（阴影+高分辨率）</option>
+                <option value="1" selected>中</option>
+                <option value="0">低（关闭阴影）</option>
+              </select>
+            </label>
+            <label class="opt"><span>视角反转 Y</span><input type="checkbox" id="invertChk" /></label>
+            <label class="opt"><span>伤害数字</span><input type="checkbox" id="dmgChk" checked /></label>
+            <div class="pause-actions">
+              <button class="btn" id="btnResume">继续</button>
+              <button class="btn danger" id="btnAbandon">放弃本轮</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen hidden" id="help">
+      <div class="help-inner">
+        <h2>操作与规则</h2>
+        <div class="pause-grid">
+          <div class="pg-col"><h3 class="mini">键鼠</h3><div id="helpKeys" class="ctrl-list"></div></div>
+          <div class="pg-col"><h3 class="mini">手柄</h3><div id="helpPad" class="ctrl-list"></div>
+            <h3 class="mini">轮回规则</h3><ul class="rules" id="helpRules"></ul>
+          </div>
+        </div>
+        <button class="btn primary" id="btnHelpBack">明白</button>
+      </div>
+    </section>
+
+    <div id="banner" class="hidden"><span id="bannerCn"></span><small id="bannerEn"></small></div>
+    <div id="fade"></div>
+  </div>
+</div>
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
