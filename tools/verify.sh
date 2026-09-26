@@ -32,6 +32,7 @@ trap cleanup EXIT
 ( sleep 420; cleanup ) </dev/null >/dev/null 2>&1 & WD=$!
 
 export CDP_PORT=$PORT
+export BASE_URL=$BASE
 cd "$HERE"
 node tools/playtest.mjs open "$BASE" | head -3
 # The loop skips frames on a hidden page (by design) and headless reports hidden.
