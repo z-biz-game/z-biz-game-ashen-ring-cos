@@ -29,7 +29,7 @@ trap cleanup EXIT
 # Watchdog redirects its fds: a background subshell inherits the script's stdout,
 # and if this runs inside a pipeline it will hold the write end open for the full
 # timeout and stall the consumer long after the tests finished.
-( sleep 420; cleanup ) </dev/null >/dev/null 2>&1 & WD=$!
+( sleep ${WD_TIMEOUT:-420}; cleanup ) </dev/null >/dev/null 2>&1 & WD=$!
 
 # A fresh --user-data-dir binds DevTools noticeably later than a warm profile,
 # so wait on the endpoint rather than guessing a sleep duration.
@@ -57,6 +57,11 @@ echo "boot state: $BOOT"
 node tools/playtest.mjs eval "Object.defineProperty(document,'hidden',{get:()=>false,configurable:true});Object.defineProperty(document,'visibilityState',{get:()=>'visible',configurable:true});'visible'" nonav >/dev/null 2>&1
 FAILED=0
 # SCENARIOS="save run" tools/verify.sh   → iterate on a subset.
+# The balance rig is a tuning instrument, not a per-commit gate: it runs ~150
+# CPU-only duels, so it stays out of the default set. Run it with
+#   SCENARIOS=balance tools/verify.sh
+# and BAL_FAST=1 in front of that for a ~15-duel smoke pass while editing the rig.
+[ -n "${BAL_FAST:-}" ] && node tools/playtest.mjs eval "window.__balFast=1" nonav >/dev/null 2>&1
 for s in ${SCENARIOS:-combat spell save run}; do
   echo "=== @$s ==="
   node tools/playtest.mjs eval "@$s" nonav 2>&1 | python3 -c "
@@ -67,6 +72,14 @@ if not m: print('NO RESULT', raw[-300:]); sys.exit(1)
 d=json.loads(m.group(0))
 rows=d.get('rows',[])
 print('rows:',len(rows),'fail:',d.get('fail'))
+tb=d.get('table')
+if tb:
+    print('  %-9s %-3s %-2s %-8s %-17s %5s %5s %6s %6s %6s %5s' % ('kind','dp','n','skill','relic','win%','ttk','dealt','took','drink','starv'))
+    for r in tb:
+        print('  %-9s %-3s %-2s %-8s %-17s %5.0f %5.1f %6d %6d %6.1f %5.1f%s' % (r['kind'],r['depth'],r.get('foes',1),r['skill'],r['relic'],r['winRate']*100,r['ttk'],r['dealt'],r['took'],r['drank'],r['starved'],' TIMEOUT' if r['timeouts'] else ''))
+    for r in d.get('bosses',[]):
+        print('  %-9s %-3s %-2s %-8s %-17s %5.0f %5.1f %6d %6d %6.1f %5.1f%s' % ('BOSS',r['depth'],r.get('foes',1),r['skill'],r['relic'],r['winRate']*100,r['ttk'],r['dealt'],r['took'],r['drank'],r['starved'],' TIMEOUT' if r['timeouts'] else ''))
+    print('  duels:',d.get('duels'))
 for r in rows:
     if not r['pass']: print('  FAIL', r['test'], json.dumps(r['detail'])[:220])
 sys.exit(1 if d.get('fail') else 0)
