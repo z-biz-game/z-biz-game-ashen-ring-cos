@@ -515,6 +515,57 @@ const SCENARIOS = {
     rows.push(Object.assign({ label: 'after 10 room transitions (leak)' }, after, { geomsStart: g0, texsStart: t0, frames: 0 }));
     return { canvas: [document.getElementById('gl').width, document.getElementById('gl').height], rows };
   })()`,
+  save: `(async () => {
+    const g = window.ashen;
+    const rows = [];
+    const rec = (name, pass, detail) => { rows.push({ test: name, pass: !!pass, detail: JSON.parse(JSON.stringify(detail ?? null)) }); window.__lastRows = rows; };
+    const S = await import(new URL('js/meta/save.js', location.href).href);
+    const { exportCode, importCode, sanitizeSave, writeSave } = S;
+    // Re-implement the wire format here rather than reusing save.js, so a bug in
+    // the encoder cannot quietly make its own decoder look correct.
+    const enc = (o) => { const b = new TextEncoder().encode(JSON.stringify(o)); let s = ''; for (const x of b) s += String.fromCharCode(x); return btoa(s).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, ''); };
+    const hash = (s) => { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(36).padStart(7, '0').slice(-7); };
+    const base = { marks: 137, upgrades: { vigor: 3, flask: 2 }, curses: ['hollow_crown'], lastClass: 'ember_seer',
+      codex: { runs: 9, deaths: 6, victories: 3, bossKills: 4, deepest: 2, kills: 88, bestRunes: 1234, parries: 21, backstabs: 5, relics: { ember_signet: 3 } },
+      settings: { volume: 0.42, quality: 2, invert: true, dmgNums: false, pad: { light: 3, roll: 1 } } };
+    const code = exportCode(base);
+    const back = importCode(code);
+    rec('code round-trips every field', back.ok && JSON.stringify(back.save) === JSON.stringify(sanitizeSave(base)), { len: code.length, ok: back.ok });
+    rec('code is a single typable token', /^ASHEN1-[A-Za-z0-9_-]+\\.[a-z0-9]{7}$/.test(code) && !/\\s/.test(code), { head: code.slice(0, 16) });
+    const mid = code.indexOf('-') + 14;
+    const tampered = code.slice(0, mid) + (code[mid] === 'A' ? 'B' : 'A') + code.slice(mid + 1);
+    const tRes = importCode(tampered);
+    rec('one flipped character fails the checksum', !tRes.ok && /校验/.test(tRes.reason || ''), { reason: tRes.reason });
+    rec('truncated code rejected', !importCode(code.slice(0, code.length - 4)).ok, {});
+    rec('empty and junk input rejected', !importCode('').ok && !importCode('hello').ok && !importCode(null).ok && !importCode(undefined).ok, {});
+    const v2body = enc({ v: 2, marks: 5 });
+    const v2 = !importCode('ASHEN1-' + v2body + '.' + hash(v2body)).ok;
+    rec('a foreign version is refused, not guessed', v2 && /版本/.test(importCode('ASHEN1-' + v2body + '.' + hash(v2body)).reason || ''), { reason: importCode('ASHEN1-' + v2body + '.' + hash(v2body)).reason });
+    const junk = sanitizeSave({ marks: '9999', upgrades: { 'a/b': 5, vigor: 99999, flask: -3 }, curses: ['ok', 3, null], lastClass: 42,
+      codex: { runs: -5, kills: 1e30, relics: { good: 2, ['x/'.repeat(30)]: 3 } }, settings: { volume: 5, quality: 7, pad: { light: 'x', roll: 99, jump: 4 } } });
+    rec('non-numeric marks fall back to 0', junk.marks === 0, { marks: junk.marks });
+    rec('upgrade levels clamp and drop path-shaped keys', junk.upgrades.vigor === 99 && !('flask' in junk.upgrades) && Object.keys(junk.upgrades).length === 1, { upgrades: junk.upgrades });
+    rec('curses keep only strings', JSON.stringify(junk.curses) === '["ok"]', { curses: junk.curses });
+    rec('class falls back when not a string', junk.lastClass === 'ashen_knight', { lastClass: junk.lastClass });
+    rec('codex counters cannot go negative or infinite', junk.codex.runs === 0 && junk.codex.kills === 1e9 && Object.keys(junk.codex.relics).join() === 'good', { runs: junk.codex.runs, kills: junk.codex.kills, relics: junk.codex.relics });
+    rec('settings clamped to their ranges', junk.settings.volume === 1 && junk.settings.quality === 1, { volume: junk.settings.volume, quality: junk.settings.quality });
+    rec('pad keeps only in-range button indices', JSON.stringify(junk.settings.pad) === '{"jump":4}', { pad: junk.settings.pad });
+    // ---- through the real UI, on the real game object
+    const prev = g.save;
+    g.save = sanitizeSave({ marks: 0 }); g.settings = g.save.settings;
+    document.getElementById('btnExport').click();
+    const box = document.getElementById('saveCode');
+    rec('export fills the textarea', /^ASHEN1-[A-Za-z0-9_-]+\\.[a-z0-9]{7}$/.test(box.value), { head: box.value.slice(0, 14) });
+    box.value = 'ASHEN1-broken.broken';
+    document.getElementById('btnImport').click();
+    rec('a bad import leaves the save alone and says why', g.save.marks === 0 && /格式|校验|解码/.test(document.getElementById('codeState').textContent), { state: document.getElementById('codeState').textContent });
+    box.value = code;
+    document.getElementById('btnImport').click();
+    rec('import restores progression through the UI', g.save.marks === 137 && g.save.upgrades.vigor === 3 && g.save.codex.relics.ember_signet === 3, { marks: g.save.marks, pad: g.input.padBinds.light });
+    rec('imported pad bindings take effect immediately', g.input.padBinds.light === 3, { light: g.input.padBinds.light });
+    g.save = prev; g.settings = prev.settings; g.input.applyPadBinds(prev.settings.pad); writeSave(prev);
+    return { codeLen: code.length, rows, fail: rows.filter((r) => !r.pass).map((r) => r.test) };
+  })()`,
   run: `(async () => {
     const g = window.ashen;
     const wait = (ms) => {
