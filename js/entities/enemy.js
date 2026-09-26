@@ -529,8 +529,6 @@ export class Ash extends Enemy {
     this.walkPhase += dt * 6;
   }
 
-  taunts(game) { return true; }
-
   kill(game) {
     if (this.dead) return;
     this.dead = true;

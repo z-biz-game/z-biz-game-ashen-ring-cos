@@ -29,9 +29,9 @@ function floors(g) {
 }
 
 export const DEPTH_MOODS = [
-  { cn: '灰烬墓地', name: 'Ashen Necropolis', tint: '#c8a24a', top: '#0a0c15', bot: '#3b2d23', glow: '#caa253', fogColor: '#181720', fogDensity: 0.026, sunColor: '#ffd9a0', sunInt: 2.1, star: 0.4, boss: '狱火执令官 · Vaelburn' },
-  { cn: '沉沦回廊', name: 'Sunken Cloister', tint: '#7fb0c8', top: '#080b12', bot: '#1f2a33', glow: '#5f93b3', fogColor: '#131a21', fogDensity: 0.033, sunColor: '#bcd8ff', sunInt: 1.5, star: 0.9, boss: '无声审判者 · Nerion' },
-  { cn: '王冠熔炉', name: 'Crown Forge', tint: '#e0743a', top: '#120708', bot: '#4a1e12', glow: '#ff8a3c', fogColor: '#20110c', fogDensity: 0.038, sunColor: '#ffb070', sunInt: 2.5, star: 0.15, boss: '裂环者 · Aldrakar' },
+  { cn: '灰烬墓地', name: 'Ashen Necropolis', tint: '#c8a24a', top: '#0a0c15', bot: '#3b2d23', glow: '#caa253', fogColor: '#181720', fogDensity: 0.026, sunColor: '#ffd9a0', sunInt: 2.1, hemiInt: 0.95, star: 0.4 },
+  { cn: '沉沦回廊', name: 'Sunken Cloister', tint: '#7fb0c8', top: '#080b12', bot: '#1f2a33', glow: '#5f93b3', fogColor: '#131a21', fogDensity: 0.033, sunColor: '#bcd8ff', sunInt: 1.5, hemiInt: 0.88, star: 0.9 },
+  { cn: '王冠熔炉', name: 'Crown Forge', tint: '#e0743a', top: '#120708', bot: '#4a1e12', glow: '#ff8a3c', fogColor: '#20110c', fogDensity: 0.038, sunColor: '#ffb070', sunInt: 2.5, hemiInt: 0.8, star: 0.15 },
 ];
 
 export function planDepth(rng, depthIndex) {
@@ -108,6 +108,7 @@ export function buildRoomGrid(rng, spec, opts = {}) {
       const c = rng.pick(fl);
       const [cx, cz] = c;
       if (Math.abs(cx - mid.cx) < 2 && Math.abs(cz - doorRow) < 2) return null;
+      if ((cx < 4 || cx > w - 5) && Math.abs(cz - doorRow) < 3) return null;
       return g.type[g.index(cx, cz)] === CELL.FLOOR ? c : null;
     }, CELL.RUBBLE);
     if (spec.kind !== 'arena') {
@@ -120,19 +121,25 @@ export function buildRoomGrid(rng, spec, opts = {}) {
     }
   }
 
-  for (const [dx, dz] of CARVE) {
+  // repeated full-grid passes, not a per-neighbour offset: dx/dz are unused
+  for (let pass = 0; pass < CARVE.length; pass++) {
     for (let cz = 1; cz < h - 1; cz++) for (let cx = 1; cx < w - 1; cx++) {
       if (g.type[g.index(cx, cz)] !== CELL.FLOOR) continue;
+      if ((cx < 4 || cx > w - 5) && Math.abs(cz - doorRow) < 3) continue;
       if (g.openCount(cx, cz) === 4 && rng.chance(0.15)) g.set(cx, cz, CELL.RUBBLE);
     }
   }
 
-  const entry = { x: g.wx(0) + 0.4, z: g.wz(row), yaw: -Math.PI / 2 };
+  // facing is (sin yaw, cos yaw); the door row runs west → east, so both face +X
+  const entry = { x: g.wx(0) + 0.4, z: g.wz(row), yaw: Math.PI / 2 };
   const exit = { x: g.wx(w - 1) - 0.4, z: g.wz(row), yaw: Math.PI / 2 };
+  // inset so the player gets a stretch of approach in front of the gate and the
+  // third-person camera has room to sit behind them at the doorway
+  const gate = { x: entry.x + g.cell * 2.7, z: entry.z };
   const usable = floors(g).filter(([cx, cz]) => g.type[g.index(cx, cz)] === CELL.FLOOR && g.openCount(cx, cz) >= 2 && Math.abs(cx - mid.cx) > 3);
   const spawnField = usable.map(([cx, cz]) => ({ x: g.wx(cx), z: g.wz(cz) }));
   const center = { x: 0, z: 0 };
-  return { grid: g, spec, entry, exit, spawnField, center, cellSize: g.cell, mid, doorRow };
+  return { grid: g, spec, entry, exit, gate, spawnField, center, cellSize: g.cell, mid, doorRow };
 }
 
 export function spawnPoints(room, rng, count, minFromEntry = 7) {
