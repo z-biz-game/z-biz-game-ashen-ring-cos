@@ -6,7 +6,7 @@
 地城、敌人、首领、圣物、音效、后期滤镜全部由代码在运行时生成。
 
 - 引擎：Three.js `0.170`（`vendor/` 内置，import map 解析，离线可跑）
-- 规模：20 个 ES Module / 约 6.7k 行 JS / 1 个 CSS / 1 个 HTML
+- 规模：20 个 ES Module / 约 7.0k 行 JS / 1 个 CSS / 1 个 HTML
 - 玩法：营火轮回 · 无敌帧翻滚 · 完美弹反 · 雾门首领 · 圣物三选一 · 灰烬印记永久成长
 - **在线试玩**：<https://z-biz-game.github.io/z-biz-game-ashen-ring-cos/>（`main` 分支推送即自动部署）
 
@@ -95,7 +95,7 @@ npm run electron     # 桌面壳启动（electron/main.cjs）
 | --- | --- | --- |
 | 职业 | 5 | 灰烬骑士 · 燔火主教 · 帷影剑客 · 空刃 · 烬中先知 |
 | 敌人原型 | 6 | 空壳游魂 · 誓灰骑士（持盾）· 破誓弓手 · 灰烬怨灵（浮空）· 残树守卫（大型）· 燃血狂信者（治疗） |
-| 首领 | 3 | 灰烬守门人 · 双面忏悔者 · 灰烬王「环中无名者」（血量 620 / 840 / 1250，均含二阶段） |
+| 首领 | 3 | 灰烬守门人 · 双面忏悔者 · 灰烬王「环中无名者」（血量 500 / 600 / 620，均含二阶段） |
 | 首领招式 | 6 | 横祭 · 裂地 · 贯誓 · 灰雨 · 环焰 · 唤灵 |
 | 圣物 | 34 | 4 稀有度（common / rare / legendary / cursed），5 件传说圣物，8 个标签体系 |
 | 诅咒 | 5 | 高风险高回报的负向圣物 |
@@ -128,7 +128,7 @@ js/
 │   └── build.js      把网格实例化成 THREE.Group（墙/柱/废墟/雾门/营火/匣子）
 ├── entities/
 │   ├── player.js     动作状态机、体力/FP、连击、弹反、法术
-│   ├── enemy.js      6 原型 AI + 灰烬召唤物
+│   ├── enemy.js      6 原型 AI + 出战队列 + 灰烬召唤物
 │   ├── boss.js       招式表、阶段切换、雾门后生成
 │   └── parts.js      人形拼装（盔/甲/武器），无模型文件
 ├── combat/hit.js     判定、伤害公式、范围伤害、掉落与拾取
@@ -143,7 +143,7 @@ vendor/
 ├── three.module.js   Three.js 0.170
 └── jsm/…             postprocessing + shaders（EffectComposer / UnrealBloom / OutputPass）
 tools/
-├── playtest.mjs      CDP 驱动：109 项运行时断言（@combat / @spell / @save / @run）
+├── playtest.mjs      CDP 驱动：109 项断言（@combat/@spell/@save/@run）+ @balance 平衡遥测
 └── verify.sh         一次性验证：真实 GPU + trap/看门狗收尾
 ```
 
@@ -203,6 +203,46 @@ RenderPass → UnrealBloomPass → GradeShader → OutputPass(ACES)
 
 ---
 
+## 平衡实测 / Balance
+
+数值不再靠手拍。`tools/playtest.mjs` 的 `@balance` 场景在同一个无头页面里跑一张对战表：
+6 个敌人原型 × 3 层 × 3 档玩家技术（`green` / `average` / `sharp`），加上三道雾门与一张伤害表，
+共约 98 场。仿真走 CPU（`view.render` 置空），单核约 2 分钟，GPU 空转。
+
+最新一轮（commit `5ab2fc9`，98 场，11 条门禁全绿）：
+
+| 度量 | 实测 |
+| --- | --- |
+| 一层房间消耗（无圣物，2–3 只） | attr 0.17–0.45，survive 100% |
+| 三层房间消耗（2 件圣物，4–5 只） | attr 0.38–0.53，survive 67–100% |
+| 雾门通关率（average 档 + 3 件圣物） | 100% / 80% / 80%，TTK 30s / 40s / 41s |
+| 同一道雾门，green 档 | 0%（消耗 1.00，即打不完） |
+| 12s 伤害表基线 | 24.4 dps，32 次挥砍，0 秒体力枯竭 |
+| 圣物在伤害表上的读数 | 余烬之誓 1.18× · 沉泥壁垒 1.02× · 静息之息 1.09× |
+
+`attr` 是**净掉血 / 血上限**：房间格子报消耗而不是报胜率，因为机器人不会拉怪、不会用地形、
+不会给怪群留法术——它在五只怪房间里的胜率是这场遭遇战的地板，不是玩家的水平。
+只有雾门 1v1 才断言 clear rate；圣物强度读钉在出生点的无敌假人，因为同一件圣物在胜率上
+能读出 0.67 也能读出 1.00。
+
+### 由这轮数据立下的四条规则
+
+1. **房间数量只有一个来源**：`main.js` 的 `roomMobCount()`，遥测表也调它。
+   曾经生成 5–6 只，第三层每一间都是必死；现在 `2 + count + 0..1`。
+2. **一间房只有一个「重锚」**（`HEAVY_MOBS`）。两个残树守卫同房的遭遇战在任何技术档位下
+   都是满血死，因为它既不被硬直打断又扛得住整轮输出。
+3. **出战队列**：`enemy.js` 的 `pressWindow()` 只让最近的 2–3 只上前，其余在 ~8.6 m 绕圈。
+   一间房因此是「一连串短决斗」，而不是群殴。
+4. **首领不吃层数倍率**：`BOSS_KINDS` 自身已含曲线，构造函数再乘一次 `depthMod.enemyMul`
+   会让「640 血」的首领带着 960 出场——实测那一版要打掉 721 点血才倒下，多出来的正是倍率。
+
+倍率本身是被数据推着往**上**调的：调整前一轮实测一层 0.51、三层 0.46，几乎持平，因为每层发一件
+圣物，而沉泥壁垒的 +12 护甲独自吃掉约六分之一管血。于是二/三层改成 1.30/1.26 与 1.65/1.55，
+本轮均值变为 0.28 / 0.48（1.7×）。门禁也从「明显更贵（1.25×）」改成「即使算上圣物也更贵
+（1.08×）」——写一个测不出来的强度，只会被下一次运行静音掉。
+
+---
+
 ## 程序化美术 / Procedural art
 
 **仓库里没有任何二进制素材**——贴图与模型都是代码生成的。
@@ -251,6 +291,7 @@ ASHEN1-<base64url(payload)>.<7 位校验>
 ```bash
 npm start &          # 另一终端：静态服务器
 npm run verify       # tools/verify.sh：@combat(22) + @spell(8) + @save(17) + @run(62) = 109 项
+SCENARIOS="balance" npm run verify   # 另加 @balance：11 条门禁、~98 场对战
 ```
 
 手工分步：
@@ -265,6 +306,7 @@ CDP_PORT=9334 node tools/playtest.mjs eval "@combat"   # 22 项战斗断言
 CDP_PORT=9334 node tools/playtest.mjs eval "@spell"    # 8 项法术 / 召唤 / 弹道
 CDP_PORT=9334 node tools/playtest.mjs eval "@save"     # 17 项存档码往返 / 篡改 / 类型投毒
 CDP_PORT=9334 node tools/playtest.mjs eval "@run"      # 62 项三层通关流程
+CDP_PORT=9334 node tools/playtest.mjs eval "@balance"  # 平衡遥测：对战表 + 伤害表 + 11 条门禁
 
 # 打线上而不是本地：BASE_URL 决定 attach 哪个标签页
 BASE_URL=https://z-biz-game.github.io/z-biz-game-ashen-ring-cos/ npm run verify
