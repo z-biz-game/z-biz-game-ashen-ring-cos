@@ -21,6 +21,7 @@ npm start            # → http://127.0.0.1:5173
 ```bash
 npm run dev          # 指定端口：node server.cjs 5173
 npm run check        # 逐文件 node --check 语法门禁
+npm run verify       # 无头浏览器跑 92 项运行时断言（需本机 Chrome）
 npm run electron     # 桌面壳启动（electron/main.cjs）
 ```
 
@@ -66,6 +67,23 @@ npm run electron     # 桌面壳启动（electron/main.cjs）
 **敌人可读性**：所有攻击都有 `windup` 预警动作与音效；`super: true` 的大体型招式无法被格挡硬吃，必须翻滚。
 **韧性/硬直**：伤害附带 poise 值，累积超过阈值触发 stagger，是重武器与法术的战术价值来源。
 
+### 体力经济 / Stamina
+
+消耗在动作起手时一次性扣除，回复按状态分档：静止 `44/s`，动作锁定期间 `×0.46 = 20.2/s`，
+格挡 `×0.28`，疾跑期间为 0 并持续掉 `dodgeCost`。**动作锁定包含翻滚**——否则 0.5s 的翻滚会把自己
+那 20 点回满，闪避变成免费。
+
+以灰烬骑士（上限 105）为例，`净耗 = 消耗 − 动作时长 × 20.2`：
+
+| 动作 | 时长 | 面板消耗 | 净耗 | 满气可做 |
+| --- | --- | --- | --- | --- |
+| 轻击 L1 | 0.52s | 16 | 5.5 | 19 次 |
+| 完整四连 | 2.59s | 64 | 11.7 | 9 轮 |
+| 重击 | 1.09s | 30 | 7.9 | 13 次 |
+| 翻滚 | 0.50s | 20 | 9.9 | 10 次 |
+
+空档回满：静止 2.4s，动作中 5.2s。所以真正的惩罚不是「打完一套没气」，而是**在锁定回复里贪最后一刀**。
+
 ---
 
 ## 内容清单 / Content
@@ -97,7 +115,7 @@ js/
 ├── engine/
 │   ├── view.js       渲染器、光照、粒子池、灯光池、后期链、画质预设
 │   ├── camera.js     过肩锁定镜头、遮挡推挤、FOV 冲击
-│   ├── input.js      键位绑定表 + 手柄映射 + 指针锁定
+│   ├── input.js      键位绑定表 + 手柄映射/重映射/震动 + 指针锁定
 │   ├── audio.js      程序化合成：4 种振荡器、3 种滤波器、35 个音效、动态层叠 BGM
 │   └── rng.js        可复现随机（hashSeed / fork）、damp、值噪声
 ├── world/
@@ -121,6 +139,9 @@ js/
 vendor/
 ├── three.module.js   Three.js 0.170
 └── jsm/…             postprocessing + shaders（EffectComposer / UnrealBloom / OutputPass）
+tools/
+├── playtest.mjs      CDP 驱动：92 项运行时断言（@combat / @spell / @run）
+└── verify.sh         一次性验证：真实 GPU + trap/看门狗收尾
 ```
 
 **状态机**：`title → hub → playing ⇄ (draft | grace | pause) → dying → win|lose`。
@@ -204,22 +225,32 @@ RenderPass → UnrealBloomPass → GradeShader → OutputPass(ACES)
 
 ## 测试 / Testing
 
-无第三方测试框架。用 Node 原生 `WebSocket` 直连 Chrome DevTools Protocol 驱动真实页面：
+无第三方测试框架。用 Node 原生 `WebSocket` 直连 Chrome DevTools Protocol 驱动真实页面，
+驱动脚本在仓库里（`tools/playtest.mjs`）：
+
+```bash
+npm start &          # 另一终端：静态服务器
+npm run verify       # tools/verify.sh：@combat(22) + @spell(8) + @run(62) = 92 项断言
+```
+
+手工分步：
 
 ```bash
 # 注意：不要加 --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader。
 # 软件光栅会吃满约 10 个核，且没有 CDP 客户端时它也不会自己停。
 /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
-  --headless=new --remote-debugging-port=9334 --window-size=760,460 about:blank &
-node /tmp/ashen-cdp.mjs open http://127.0.0.1:5173/
-node /tmp/ashen-cdp.mjs eval "@combat"   # 19 项战斗断言
-node /tmp/ashen-cdp.mjs eval "@spell"    # 法术 / 召唤 / 弹道
-node /tmp/ashen-cdp.mjs eval "@run"      # 三层通关流程（59 项断言）
+  --headless=new --remote-debugging-port=9334 --window-size=820,620 about:blank &
+CDP_PORT=9334 node tools/playtest.mjs open http://127.0.0.1:5173/
+CDP_PORT=9334 node tools/playtest.mjs eval "@combat"   # 22 项战斗断言
+CDP_PORT=9334 node tools/playtest.mjs eval "@spell"    # 8 项法术 / 召唤 / 弹道
+CDP_PORT=9334 node tools/playtest.mjs eval "@run"      # 62 项三层通关流程
 ```
 
 断言直接读取运行时对象（`player.state`、`enemies[].hp`、`run.runes`），而不是比对截图。
 驱动脚本必须用 `trap cleanup EXIT` + 看门狗进程收尾，并且要先把 `document.hidden` 覆写成 `false`——
 主循环在隐藏页会直接跳帧（这是有意的：没人看的时候不该烧 GPU），但无头环境会误报隐藏。
+看门狗子进程要重定向掉自己的 fd：它继承了脚本的 stdout，如果脚本跑在管道里，
+它会在超时前一直占住写端，测试早就结束了下游却读不到 EOF（`tools/verify.sh` 里踩过）。
 
 
 ---

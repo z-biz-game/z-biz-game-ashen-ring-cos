@@ -243,6 +243,16 @@ kbd { font-family: var(--sans); font-size: 11px; padding: 3px 7px; border: 1px s
 .opt { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12.5px; color: #a29883; margin-bottom: 11px; font-family: var(--sans); pointer-events: auto; }
 .opt input[type=range] { width: 150px; accent-color: var(--gold); pointer-events: auto; }
 .opt select { background: #0b0c0f; color: var(--bone); border: 1px solid var(--line); padding: 5px 8px; font-family: var(--sans); pointer-events: auto; }
+.opt-col { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; }
+.pad-map { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; width: 100%; }
+.padkey { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: #0b0c0f; border: 1px solid var(--line); color: #a29883; font-family: var(--sans); font-size: 11.5px; padding: 4px 8px; cursor: pointer; pointer-events: auto; }
+.padkey b { font-weight: 500; }
+.padkey kbd { color: var(--gold); }
+.padkey:hover { border-color: var(--gold); color: var(--bone); }
+.padkey.wait { border-color: var(--gold); background: #191207; }
+.padkey.wait kbd { animation: padBlink 1.1s steps(2, jump-none) infinite; }
+@keyframes padBlink { 50% { opacity: 0.3; } }
+.btn.tiny { font-size: 11px; padding: 4px 11px; letter-spacing: 0.12em; }
 .pause-actions { display: flex; gap: 12px; margin-top: 16px; }
 .rules { font-size: 12px; line-height: 2; color: #978e7e; padding-left: 18px; font-family: var(--sans); }
 .rules li::marker { color: var(--gold); }

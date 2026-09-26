@@ -7,7 +7,7 @@ export const DEFAULT_SAVE = {
   curses: [],
   lastClass: 'ashen_knight',
   codex: { runs: 0, deaths: 0, victories: 0, bossKills: 0, deepest: 0, kills: 0, bestRunes: 0, parries: 0, backstabs: 0, relics: {} },
-  settings: { volume: 0.7, quality: 1, invert: false, dmgNums: true },
+  settings: { volume: 0.7, quality: 1, invert: false, dmgNums: true, pad: {} },
 };
 
 function clone(o) { return JSON.parse(JSON.stringify(o)); }

@@ -3,7 +3,7 @@ import { View } from './engine/view.js';
 import { CameraRig } from './engine/camera.js';
 import { Input } from './engine/input.js';
 import { Audio } from './engine/audio.js';
-import { RNG, hashSeed, strFromSeed, clamp, damp } from './engine/rng.js';
+import { RNG, hashSeed, strFromSeed, clamp, damp, lerp } from './engine/rng.js';
 import { planDepth, buildRoomGrid } from './world/layout.js';
 import { buildRoom } from './world/build.js';
 import { CELL } from './world/grid.js';
@@ -51,11 +51,13 @@ class Game {
     window.__ashenAudio = this.audio;
     this.save = loadSave();
     this.settings = this.save.settings;
+    this.input.applyPadBinds(this.settings.pad);
     this.hud = new HUD(this);
     this.state = 'boot';
     this.time = 0;
     this.hitStopT = 0;
     this.slowT = 0;
+    this.cine = null;
     this.enemies = [];
     this.projectiles = [];
     this.ashes = [];
@@ -188,6 +190,8 @@ class Game {
   }
 
   enterRoom(depthIdx, roomIdx) {
+    this.cine = null;
+    this.input.frozen = false;
     this.run.depth = depthIdx;
     this.run.roomIdx = roomIdx;
     const plan = this.plans[depthIdx];
@@ -411,6 +415,7 @@ class Game {
     this.hud.banner('守望者已熄', 'THE KEEPER FALLS');
     this.audio.pulse('victory');
     this.slowMo(1.4);
+    this.input.rumble(0.7, 1, 520);
     this.offerDraft({
       title: '王冠碎片',
       sub: '从首领的灰烬里取出三枚残片。',
@@ -698,9 +703,20 @@ class Game {
 
   // -------------------------------------------------------------------- update
   step(dt) {
+    if (this.cine) {
+      const c = this.cine;
+      c.t += dt;
+      const k = clamp(c.t / c.dur, 0, 1);
+      this.input.frozen = c.t < c.lock;
+      const ease = k < 0.3 ? 0 : (k - 0.3) / 0.7;
+      this.rig.wantDist = lerp(2.9, c.dist0, ease * ease);
+      if (k >= 1) { this.cine = null; this.input.frozen = false; this.rig.wantDist = c.dist0; }
+    } else if (this.input.frozen) this.input.frozen = false;
     const look = this.input.look(dt);
-    this.rig.orbit(dt, look.x, look.y, this.settings.invert);
-    this.rig.zoom(this.input.wheel);
+    if (!this.cine) {
+      this.rig.orbit(dt, look.x, look.y, this.settings.invert);
+      this.rig.zoom(this.input.wheel);
+    }
     this.player.update(dt, this);
     for (const e of this.enemies) if (!e.disposed) e.update(dt, this);
     this.enemies = this.enemies.filter((e) => !e.disposed);
@@ -734,6 +750,12 @@ class Game {
       this.setLock(this.boss);
       this.slowMo(0.9);
       this.view.shake(1.2);
+      // the boss holds its intro pose for 1.5 s — spend it on a camera move instead of
+      // leaving the rig wherever combat left it
+      this.cine = { t: 0, dur: 1.5, lock: 0.9, dist0: this.rig.wantDist };
+      this.rig.wantDist = 2.9;
+      this.rig.pitch = clamp(this.rig.pitch + 0.16, -1.05, 0.78);
+      this.rig.punch(1.0);
     }
   }
 
@@ -875,6 +897,9 @@ class Game {
       this.checkBuffs(dt);
     } else {
       this.time += raw;
+      // menus never call step(), so without this the pad stops polling and the
+      // remap screen could not see a button press
+      this.input.pollPad();
       if (!this.player || this.state === 'title' || this.state === 'hub') this.menuStep(raw);
       else { this.room?.update(this.time); this.view.update(raw, this.view.camera.position); }
     }

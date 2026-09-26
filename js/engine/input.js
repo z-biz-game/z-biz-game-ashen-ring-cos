@@ -6,8 +6,8 @@ const BINDS = {
   left: ['KeyA', 'ArrowLeft'],
   right: ['KeyD', 'ArrowRight'],
   roll: ['Space'],
-  light: ['KeyJ'],
-  heavy: ['KeyK'],
+  light: ['KeyJ', 'mouse0'],
+  heavy: ['KeyK', 'mouse2'],
   block: ['KeyL', 'ShiftLeft'],
   sprint: ['KeyH', 'ShiftRight'],
   parry: ['KeyU'],
@@ -25,8 +25,16 @@ const BINDS = {
   cancel: ['Backspace', 'Escape'],
 };
 
-const PAD = { move: [0, 1], look: [2, 3], roll: 0, light: 2, heavy: 5, block: 4, parry: 3, jump: 1, lock: 6, interact: 7, estus: 9, ash: 8, spell1: 12, spell2: 13, pause: 10, confirm: 0, cancel: 1, reroll: 15 };
+const PAD_DEFAULT = { move: [0, 1], look: [2, 3], roll: 0, light: 2, heavy: 5, block: 4, parry: 3, jump: 1, lock: 6, interact: 7, estus: 9, ash: 8, spell1: 12, spell2: 13, pause: 10, confirm: 0, cancel: 1, reroll: 15 };
 const DEAD = 0.18;
+
+// Standard-gamepad button indices, which is what the Gamepad API reports.
+export const PAD_NAMES = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'Back', 'Start', 'L3', 'R3', '↑', '↓', '←', '→', 'Guide'];
+// Axes are analogue, so only they get the ± treatment in the remap UI.
+export const PAD_AXES = ['L-stick X', 'L-stick Y', 'R-stick X', 'R-stick Y', 'L-trigger', 'R-trigger'];
+// What the settings screen lets a player rebind: everything that is a discrete press.
+// spell3 has no default pad button (the D-pad column is taken), so it is not offered.
+export const PAD_ACTIONS = ['roll', 'light', 'heavy', 'block', 'parry', 'jump', 'lock', 'interact', 'estus', 'ash', 'spell1', 'spell2', 'pause', 'reroll'];
 
 export class Input {
   constructor(canvas) {
@@ -39,16 +47,37 @@ export class Input {
     this.wheel = 0;
     this.lockRequested = false;
     this.locked = false;
-    this.pointerDown = new Set();
-    this.pointerPressed = new Set();
     this.padConnected = false;
+    this.padBinds = { ...PAD_DEFAULT, move: [...PAD_DEFAULT.move], look: [...PAD_DEFAULT.look] };
     this._padPrev = new Set();
     this._padPressed = new Set();
+    this._rawPrev = new Set();
+    this._capturing = null;
+    this.frozen = false;
     this.onLockChange = null;
     this.sensitivity = 0.0026;
 
     if (typeof window !== 'undefined') this._bind();
   }
+
+  // Persisted overrides only carry the actions a player actually moved.
+  applyPadBinds(map) {
+    this.padBinds = { ...PAD_DEFAULT, move: [...PAD_DEFAULT.move], look: [...PAD_DEFAULT.look] };
+    if (!map) return;
+    for (const [act, idx] of Object.entries(map)) {
+      if (typeof idx === 'number' && act in PAD_DEFAULT && act !== 'move' && act !== 'look') this.padBinds[act] = idx;
+    }
+  }
+
+  padLabel(act) {
+    const v = this.padBinds[act];
+    return typeof v === 'number' ? (PAD_NAMES[v] || String(v)) : '—';
+  }
+
+  // Remap flow: the UI names an action, the next physical button press claims it.
+  beginPadCapture(action) { this._capturing = action; }
+  cancelPadCapture() { this._capturing = null; }
+  get capturing() { return this._capturing; }
 
   _bind() {
     const editable = (el) => !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT');
@@ -60,15 +89,15 @@ export class Input {
       this.pressed.add(e.code);
     }, { passive: false });
     window.addEventListener('keyup', (e) => { this.down.delete(e.code); this.released.add(e.code); });
-    window.addEventListener('blur', () => { this.down.clear(); this.pointerDown.clear(); });
+    window.addEventListener('blur', () => { this.down.clear(); });
 
     this.canvas.addEventListener('mousedown', (e) => {
       const k = 'mouse' + e.button;
-      this.pointerDown.add(k);
-      this.pointerPressed.add(k);
+      this.down.add(k);
+      this.pressed.add(k);
       if (e.button === 2) e.preventDefault();
     });
-    window.addEventListener('mouseup', (e) => { this.pointerDown.delete('mouse' + e.button); });
+    window.addEventListener('mouseup', (e) => { this.down.delete('mouse' + e.button); });
     window.addEventListener('contextmenu', (e) => { if (this.locked) e.preventDefault(); });
     window.addEventListener('mousemove', (e) => {
       if (!this.locked) return;
@@ -97,12 +126,14 @@ export class Input {
   exitLock() { if (document.pointerLockElement) document.exitPointerLock(); }
 
   isDown(action) {
+    if (this.frozen) return false;
     for (const code of BINDS[action] || []) if (this.down.has(code)) return true;
     for (const b of this._padButtonsDown(action)) if (this.padButtons.has(b)) return true;
     return false;
   }
 
   justPressed(action) {
+    if (this.frozen) return false;
     for (const code of BINDS[action] || []) if (this.pressed.has(code)) return true;
     return this.padPressed.has(action);
   }
@@ -111,8 +142,17 @@ export class Input {
   get padPressed() { return this._padPressed; }
 
   _padButtonsDown(action) {
-    const map = { light: 'light', heavy: 'heavy', block: 'block', parry: 'parry', roll: 'roll', jump: 'jump', lock: 'lock', interact: 'interact', estus: 'estus', ash: 'ash', spell1: 'spell1', spell2: 'spell2', pause: 'pause', confirm: 'confirm', cancel: 'cancel', reroll: 'reroll' };
-    return map[action] ? ['pad:' + map[action]] : [];
+    return typeof this.padBinds[action] === 'number' ? ['pad:' + action] : [];
+  }
+
+  rumble(mo = 0.5, hi = 0.5, ms = 140) {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    for (const p of pads) {
+      const act = p && p.vibrationActuator;
+      if (!act || typeof act.playEffect !== 'function') continue;
+      act.playEffect('dual-rumble', { duration: ms, strongMagnitude: hi, weakMagnitude: mo }).catch(() => {});
+      return;
+    }
   }
 
   _pollPad() {
@@ -124,7 +164,7 @@ export class Input {
     if (!gp) { this._padDown.clear(); this.padActive = false; return; }
     this.padActive = true;
     const now = new Set();
-    for (const [act, idx] of Object.entries(PAD)) {
+    for (const [act, idx] of Object.entries(this.padBinds)) {
       if (typeof idx !== 'number') continue;
       const b = gp.buttons[idx];
       if (b && (b.pressed || b.value > 0.5)) now.add('pad:' + act);
@@ -132,9 +172,22 @@ export class Input {
     for (const b of now) if (!this._padPrev.has(b)) this._padPressed.add(b.slice(4));
     this._padPrev = now;
     this._padDown = now;
+    const raw = new Set();
+    gp.buttons.forEach((b, i) => { if (b && (b.pressed || b.value > 0.4)) raw.add(i); });
+    if (this._capturing) {
+      for (const i of raw) {
+        if (this._rawPrev.has(i)) continue;
+        const act = this._capturing;
+        this._capturing = null;
+        this.padBinds[act] = i;
+        this.onPadCapture?.(act, i);
+        break;
+      }
+    }
+    this._rawPrev = raw;
     const ax = gp.axes || [];
-    const mx = ax[PAD.move[0]] || 0, my = ax[PAD.move[1]] || 0;
-    const rx = ax[PAD.look[0]] || 0, ry = ax[PAD.look[1]] || 0;
+    const mx = ax[this.padBinds.move[0]] || 0, my = ax[this.padBinds.move[1]] || 0;
+    const rx = ax[this.padBinds.look[0]] || 0, ry = ax[this.padBinds.look[1]] || 0;
     this._padMove = { x: Math.abs(mx) > DEAD ? mx : 0, y: Math.abs(my) > DEAD ? my : 0 };
     this._padLook = { x: Math.abs(rx) > DEAD ? rx * 340 : 0, y: Math.abs(ry) > DEAD ? ry * 340 : 0 };
     const trig = gp.buttons[7]?.value || 0, brat = gp.buttons[6]?.value || 0;
@@ -150,7 +203,7 @@ export class Input {
     if (this.isDown('back')) y += 1;
     if (this.isDown('left')) x -= 1;
     if (this.isDown('right')) x += 1;
-    const p = this._padMove;
+    const p = this.frozen ? null : this._padMove;
     if (p && (p.x || p.y)) { x += p.x; y += p.y; }
     const len = Math.hypot(x, y);
     if (len > 1) { x /= len; y /= len; }
@@ -165,6 +218,8 @@ export class Input {
     return { x: dx * this.sensitivity, y: dy * this.sensitivity };
   }
 
+  pollPad() { this._pollPadIfDue(); }
+
   _pollPadIfDue() {
     const now = performance.now();
     if (this._padAt && now - this._padAt < 12) return;
@@ -175,15 +230,12 @@ export class Input {
   endFrame() {
     this.pressed.clear();
     this.released.clear();
-    this.pointerPressed.clear();
     this.wheel = 0;
   }
 
   reset() {
     this.down.clear();
     this.pressed.clear();
-    this.pointerDown.clear();
-    this.pointerPressed.clear();
     this.mouseDX = this.mouseDY = 0;
   }
 
