@@ -8,10 +8,13 @@
 - 引擎：Three.js `0.170`（`vendor/` 内置，import map 解析，离线可跑）
 - 规模：20 个 ES Module / 约 6.7k 行 JS / 1 个 CSS / 1 个 HTML
 - 玩法：营火轮回 · 无敌帧翻滚 · 完美弹反 · 雾门首领 · 圣物三选一 · 灰烬印记永久成长
+- **在线试玩**：<https://z-biz-game.github.io/z-biz-game-ashen-ring-cos/>（`main` 分支推送即自动部署）
 
 ---
 
 ## 快速开始
+
+本地跑：
 
 ```bash
 npm install          # 只有 three 与 electron（devDependency）
@@ -244,6 +247,9 @@ CDP_PORT=9334 node tools/playtest.mjs open http://127.0.0.1:5173/
 CDP_PORT=9334 node tools/playtest.mjs eval "@combat"   # 22 项战斗断言
 CDP_PORT=9334 node tools/playtest.mjs eval "@spell"    # 8 项法术 / 召唤 / 弹道
 CDP_PORT=9334 node tools/playtest.mjs eval "@run"      # 62 项三层通关流程
+
+# 打线上而不是本地：BASE_URL 决定 attach 哪个标签页
+BASE_URL=https://z-biz-game.github.io/z-biz-game-ashen-ring-cos/ npm run verify
 ```
 
 断言直接读取运行时对象（`player.state`、`enemies[].hp`、`run.runes`），而不是比对截图。

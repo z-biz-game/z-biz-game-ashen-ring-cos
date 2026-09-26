@@ -1,10 +1,17 @@
 // Minimal CDP driver for headless playtesting (Node 21+ global WebSocket/fetch).
+// env: CDP_PORT (devtools port, default 9333), BASE_URL (page to attach to, default http://127.0.0.1:5173/)
 // usage:
-//   node cdp.mjs nav <url>
-//   node cdp.mjs eval '<js expression>'
-//   node cdp.mjs shot <path.png>
-//   node cdp.mjs logs
+//   node playtest.mjs nav <url>
+//   node playtest.mjs eval '<js expression>'   # pass `nonav` to skip the reload
+//   node playtest.mjs eval '@combat'   # | @spell | @run  — 92 runtime assertions
+//   node playtest.mjs shot <path.png>
+//   node playtest.mjs logs
 const PORT = process.env.CDP_PORT || 9333;
+// Which page to attach to. Hard-coding the dev-server port silently evaluates
+// against a fresh about:blank tab when pointed at any other origin.
+const BASE = process.env.BASE_URL || 'http://127.0.0.1:5173/';
+const ORIGIN = new URL(BASE).origin;
+const isOurs = (u) => typeof u === 'string' && u.startsWith(ORIGIN);
 const cmd = process.argv[2];
 const arg = process.argv[3];
 
@@ -29,11 +36,11 @@ async function main() {
   const cdp = new CDP(ws);
   let list = await (await fetch(`http://127.0.0.1:${PORT}/json`)).json();
   if (cmd === 'open') {
-    for (const t of list) if (t.type === 'page' && /5173/.test(t.url)) { try { await cdp.send('Target.closeTarget', { targetId: t.id || t.targetId }); } catch { /* gone */ } }
+    for (const t of list) if (t.type === 'page' && isOurs(t.url)) { try { await cdp.send('Target.closeTarget', { targetId: t.id || t.targetId }); } catch { /* gone */ } }
     await new Promise((r) => setTimeout(r, 300));
     list = [];
   }
-  const existing = cmd === 'open' ? null : list.find((t) => t.type === 'page' && /5173/.test(t.url));
+  const existing = cmd === 'open' ? null : list.find((t) => t.type === 'page' && isOurs(t.url));
   let targetId, sessionId;
   if (existing) {
     targetId = existing.id || existing.targetId;
@@ -59,16 +66,16 @@ async function main() {
   await cdp.send('Page.enable', {}, sessionId);
 
   if (cmd === 'open') {
-    await cdp.send('Page.navigate', { url: arg || 'http://127.0.0.1:5173/' }, sessionId);
+    await cdp.send('Page.navigate', { url: arg || BASE }, sessionId);
     await new Promise((r) => setTimeout(r, 2200));
-    console.log('opened ' + (arg || 'http://127.0.0.1:5173/') + '\n' + (logs.join('\n') || '(no console output)'));
+    console.log('opened ' + (arg || BASE) + '\n' + (logs.join('\n') || '(no console output)'));
   } else if (cmd === 'nav') {
     await cdp.send('Page.navigate', { url: arg }, sessionId);
     await new Promise((r) => setTimeout(r, 2500));
     console.log('navigated\n' + (logs.join('\n') || '(no console output)'));
   } else if (cmd === 'eval') {
     if (process.argv[4] !== 'nonav') {
-      await cdp.send('Page.navigate', { url: 'http://127.0.0.1:5173/' }, sessionId);
+      await cdp.send('Page.navigate', { url: BASE }, sessionId);
       await new Promise((r) => setTimeout(r, 1800));
     }
     if (arg.startsWith('@')) {
