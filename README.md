@@ -312,6 +312,16 @@ CDP_PORT=9334 node tools/playtest.mjs eval "@balance"  # 平衡遥测：对战�
 BASE_URL=https://z-biz-game.github.io/z-biz-game-ashen-ring-cos/ npm run verify
 ```
 
+每次 push 到 `main`，`.github/workflows/ci.yml` 会在 ubuntu runner 上把这条闸跑两遍：
+根形态（`node server.cjs 5173`）与 Pages 实际服务的前缀形态（一个只含本仓软链的目录交给
+`python3 -m http.server`）。2026-09-28 首跑的 runner 日志：两种形态各自打印
+`rows: 22 / 8 / 17 / 62，fail: []` 后 `=== ALL GREEN ===`，根形态 13.7 s、前缀形态 11.6 s。
+runner 上 Chrome 会自己退回软件 WebGL（控制台留一句
+`Automatic fallback to software WebGL has been deprecated`），游戏照样 boot 出 `title`、
+109 条全过——所以 CI 不需要那套 flag。哪一天它变成红了，先去看 job 里那条只在失败时执行的
+诊断步，它会把 GL 上下文与页面 console 打在日志里；届时的修法是给 CI 单独加
+`--enable-unsafe-swiftshader`，那是对上面本机警告的一处有意例外，不是把它推广到本机。
+
 断言直接读取运行时对象（`player.state`、`enemies[].hp`、`run.runes`），而不是比对截图。
 驱动脚本必须用 `trap cleanup EXIT` + 看门狗进程收尾，并且要先把 `document.hidden` 覆写成 `false`——
 主循环在隐藏页会直接跳帧（这是有意的：没人看的时候不该烧 GPU），但无头环境会误报隐藏。
