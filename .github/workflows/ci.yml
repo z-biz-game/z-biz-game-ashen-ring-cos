@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: syntax gate over every shipped source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # 不 npm install：three 已经 vendor 进仓（vendor/three.module.js，1.3 MB，git ls-files 里读得到），
+      # server.cjs 与 tools/playtest.mjs 只用 Node 内建。为了"CI 看起来正规"去装 Electron，
+      # 换来的是网络抖动时一条与代码无关的红。
+      - name: npm run check (node --check over js/** and the vendored three)
+        run: npm run check
+
+      - name: Entry points wired
+        run: |
+          test -f index.html
+          grep -q './js/main.js' index.html
+          grep -q '"three": "./vendor/three.module.js"' index.html
+
+  # 真浏览器闸。verify.sh 之前从没在任何 CI 里跑过（这个仓原先只有 pages.yml），
+  # 而它需要有人先把 server.cjs 起起来——README 里写了要 npm start，脚本自己不启动。
+  # 109 = @combat(22) + @spell(8) + @save(17) + @run(62)，2026-09-28 本机两跑出来的条数：
+  # 一次对 node server.cjs 5173 的根形态，一次对已部署的 Pages 站，都是 fail: [] + === ALL GREEN ===。
+  browser:
+    name: real browser gate (109 assertions, both URL shapes)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # 台架是裸 CDP 驱动，用 Node 21+ 的全局 WebSocket/fetch（tools/playtest.mjs:1）。
+          # 钉 20 的话第一次 attach 就死在 "WebSocket is not defined"，一条断言都跑不到。
+          node-version: 22
+
+      - name: Root shape (what server.cjs serves)
+        env:
+          WD_TIMEOUT: 900
+        run: |
+          node server.cjs 5173 &
+          for i in $(seq 1 40); do
+            curl -fsS -m 2 http://127.0.0.1:5173/ >/dev/null 2>&1 && break
+            sleep 0.25
+          done
+          bash tools/verify.sh
+
+      # Pages 把这个仓发在 /z-biz-game-ashen-ring-cos/ 之下，根形态分辨不出"绝对路径的 import"——
+      # 同组织已经因此红过一次（部署站上 404，本地闸全绿）。前缀形态同样是闸的一部分：
+      # index.html 连 importmap 都写成 './vendor/...'，这是它能被前缀服务的前提，这里替它守住。
+      - name: Prefix shape (how Pages actually serves us)
+        env:
+          WD_TIMEOUT: 900
+        run: |
+          root=$(mktemp -d)
+          ln -s "$GITHUB_WORKSPACE" "$root/z-biz-game-ashen-ring-cos"
+          python3 -m http.server 5500 --bind 127.0.0.1 --directory "$root" &
+          SERVER=$!
+          trap 'kill $SERVER 2>/dev/null' EXIT
+          for i in $(seq 1 40); do
+            curl -fsS -m 2 "http://127.0.0.1:5500/z-biz-game-ashen-ring-cos/" >/dev/null 2>&1 && break
+            sleep 0.25
+          done
+          curl -fsS -m 3 "http://127.0.0.1:5500/z-biz-game-ashen-ring-cos/js/main.js" >/dev/null
+          curl -fsS -m 3 "http://127.0.0.1:5500/z-biz-game-ashen-ring-cos/vendor/three.module.js" >/dev/null
+          BASE_URL=http://127.0.0.1:5500/z-biz-game-ashen-ring-cos/ bash tools/verify.sh
+
+      # 红的时候别让人从头猜：这一跑唯一的诊断步，不参与判定（成功时根本不执行）。
+      # verify.sh 明写不许给本机 Chrome 加 swiftshader 那套 flag（tools/verify.sh:4-6，软件光栅
+      # 会吃满核且不attach就退不掉），所以 Linux runner 上"起得来但拿不到 WebGL 上下文"
+      # 是这条闸的头号嫌疑，先把答案打在日志里。
+      - name: Diagnose a red browser gate (WebGL context + page console)
+        if: failure()
+        run: |
+          curl -fsS -m 2 http://127.0.0.1:5173/ >/dev/null 2>&1 || { node server.cjs 5173 & sleep 1; }
+          udd=$(mktemp -d)
+          google-chrome --headless=new --remote-debugging-port=9339 --user-data-dir="$udd" \
+            --no-first-run --no-default-browser-check about:blank >/tmp/diag-chrome.log 2>&1 &
+          CPID=$!
+          for i in $(seq 1 60); do
+            curl -fsS -m 1 http://127.0.0.1:9339/json/version >/dev/null 2>&1 && break
+            sleep 0.5
+          done
+          export CDP_PORT=9339 BASE_URL=http://127.0.0.1:5173/
+          node tools/playtest.mjs open http://127.0.0.1:5173/ | head -3
+          node tools/playtest.mjs eval "(()=>{const c=document.createElement('canvas');const gl=c.getContext('webgl2')||c.getContext('webgl');if(!gl)return 'WEBGL=NULL';const d=gl.getExtension('WEBGL_debug_renderer_info');return 'WEBGL=ok '+gl.getParameter(gl.VERSION)+' / '+(d?gl.getParameter(d.UNMASKED_RENDERER_WEBGL):'no-debug-info')})()" nonav
+          node tools/playtest.mjs eval "document.getElementById('boot-error')?document.getElementById('boot-error').textContent:'(no #boot-error element)'" nonav
+          node tools/playtest.mjs logs
+          kill $CPID 2>/dev/null
+          tail -20 /tmp/diag-chrome.log
