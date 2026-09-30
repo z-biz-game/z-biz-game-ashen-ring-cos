@@ -27,14 +27,16 @@ body { user-select: none; cursor: default; }
 
 #grain {
   position: absolute; inset: -20%; pointer-events: none; z-index: 2;
-  background:
-    radial-gradient(ellipse at 50% 46%, transparent 42%, rgba(0, 0, 0, 0.34) 74%, rgba(0, 0, 0, 0.72) 100%),
-    repeating-radial-gradient(circle at 17% 39%, rgba(255, 255, 255, 0.016) 0 1px, transparent 1px 3px);
+  background: radial-gradient(ellipse at 50% 46%, transparent 42%, rgba(0, 0, 0, 0.34) 74%, rgba(0, 0, 0, 0.72) 100%);
   mix-blend-mode: multiply; opacity: 0.96;
 }
 #grain::after {
+  /* 真实贴图：assets/gen/make_art.py 产的 256px 可平铺火山灰（四边逐位相同）。
+     原来这里是 repeating-conic-gradient，手机上每帧重算一遍还带同心圆纹。 */
   content: ""; position: absolute; inset: 0; opacity: 0.5;
-  background: repeating-conic-gradient(from 0deg, rgba(255, 255, 255, 0.02) 0 0.4deg, transparent 0.4deg 1.2deg);
+  background: url("../textures/ash-grain-256.png") repeat;
+  background-size: 256px 256px;
+  mix-blend-mode: screen;
   animation: swirl 44s linear infinite;
 }
 @keyframes swirl { to { transform: rotate(360deg) scale(1.06); } }
@@ -274,4 +276,64 @@ kbd { font-family: var(--sans); font-size: 11px; padding: 3px 7px; border: 1px s
   #minimap { display: none; }
   #relicList { display: none; }
   .card { width: 45vw; min-height: 210px; }
+}
+
+/* ------------------------------------------------------- 移动端 / 无障碍 精修 */
+/* 不写这条，浏览器把手势当成页面滚动/双击缩放，摇杆拖一下游戏跟着抖一下。 */
+#gl { touch-action: none; }
+
+.icon-btn {
+  pointer-events: auto; cursor: pointer; width: 44px; height: 44px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(12, 11, 9, 0.62); border: 1px solid var(--line); color: var(--gold);
+  font-family: var(--serif); font-size: 17px; line-height: 1; padding: 0;
+}
+.icon-btn:hover { border-color: var(--gold-hi); color: var(--gold-hi); }
+.icon-btn.muted { color: #6f6656; text-decoration: line-through; text-decoration-color: #cf6a55; }
+.icon-btn.on { border-color: var(--gold-hi); color: var(--gold-hi); box-shadow: inset 0 0 14px rgba(201, 162, 74, 0.22); }
+
+#touchpad { position: absolute; inset: 0; z-index: 4; pointer-events: none; display: none; }
+@media (pointer: coarse) { #touchpad { display: block; } }
+.tp-cluster {
+  position: absolute; right: calc(14px + env(safe-area-inset-right, 0px));
+  bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+  display: flex; flex-direction: column; gap: 10px; align-items: flex-end;
+}
+.tp-row { display: flex; gap: 10px; }
+.tp-strip {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  display: flex; gap: 8px;
+}
+.tp-btn {
+  pointer-events: auto; touch-action: none; -webkit-tap-highlight-color: transparent;
+  min-width: 58px; min-height: 58px; padding: 0 10px;
+  font-family: var(--serif); font-size: 13px; letter-spacing: 0.1em;
+  color: var(--gold-hi); background: rgba(14, 13, 11, 0.55); border: 1px solid var(--line);
+}
+.tp-btn.wide { min-width: 74px; }
+.tp-btn.down { background: rgba(201, 162, 74, 0.3); border-color: var(--gold-hi); color: #fff3d6; }
+
+/* 命中区：44px 是手指的下限，原来 .btn.tiny/.padkey 只有 20 来像素高。 */
+.btn, .btn.small, .btn.tiny, .tab, .padkey, .opt select, .opt input[type=range] { min-height: 44px; }
+.tab { display: inline-flex; align-items: center; }
+.padkey { gap: 12px; }
+.opt { margin-bottom: 16px; }
+
+/* 刘海和圆角：viewport-fit=cover 之后不写 env() 就等于把血条画进刘海里。 */
+#topbar { top: calc(14px + env(safe-area-inset-top, 0px)); left: calc(18px + env(safe-area-inset-left, 0px)); right: calc(18px + env(safe-area-inset-right, 0px)); }
+#vitals { left: calc(18px + env(safe-area-inset-left, 0px)); bottom: calc(22px + env(safe-area-inset-bottom, 0px)); }
+#relicList { right: calc(18px + env(safe-area-inset-right, 0px)); bottom: calc(22px + env(safe-area-inset-bottom, 0px)); }
+#bossbar { bottom: calc(30px + env(safe-area-inset-bottom, 0px)); }
+#screens { padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
+#toast-lock { bottom: calc(14% + env(safe-area-inset-bottom, 0px)); }
+
+/* 减少动态：JS 侧 View.shake 直接 return、View.burst 封顶 1 颗、菜单停止环绕，
+   这里负责把 CSS 那几套常驻动画也停掉（名字都是本文件自己定义的）。 */
+@media (prefers-reduced-motion: reduce) {
+  #grain::after { animation: none; }
+  #vitals .bar.low b, #lockRing, #centerHint, .dmg-num, #banner, .toast { animation: none !important; }
+  #dead h1, #win h1 { animation: none !important; filter: none; letter-spacing: normal; }
+  .btn, .icon-btn, .tp-btn, #fade { transition-duration: 0.01ms !important; }
+  .btn:hover { transform: none; }
 }

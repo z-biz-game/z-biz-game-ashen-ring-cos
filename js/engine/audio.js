@@ -81,14 +81,22 @@ export class Audio {
     this.sfx.connect(this.master); this.music.connect(this.master); this.ambGain.connect(this.music);
     this.clip = ctx.createWaveShaper(); this.clip.curve = tanhCurve(); this.clip.oversample = '2x';
     this.master.connect(this.clip).connect(ctx.destination); this.masterGain = this.master; this.sfxGain = this.sfx; this.musicGain = this.music;
-    this._makeBuffers(); this._makeReverb(); this._resume();
+    this._makeBuffers(); this._makeReverb(); if (this.enabled) this._resume();
     return this;
   }
 
   setEnabled(on) {
-    const ctx = this.ctx ?? null; this.enabled = !!on;
-    if (ctx) this.master.gain.setTargetAtTime(this.enabled ? Math.max(0.0001, this.vols.master) : 0, ctx.currentTime, 0.05);
+    const ctx = this.ctx ?? null;
+    this.enabled = !!on;
+    if (!ctx) return;
+    this.master.gain.setTargetAtTime(this.enabled ? Math.max(0.0001, this.vols.master) : 0, ctx.currentTime, 0.05);
+    // 只把 gain 拉到 0 是**假静音**：上下文还在跑，已排期的每个振荡器仍然在推进、
+    // 在分配节点，只是听不见。suspend() 之后 currentTime 都不再前进，这才是真停。
+    if (this.enabled) { this._resume(); if (this._wantAmb != null && !this.amb) this.startAmbience(this._wantAmb); }
+    else this._suspend();
   }
+
+  toggleEnabled() { this.setEnabled(!this.enabled); return this.enabled; }
 
   setVolume(kind, v) {
     const ctx = this.ctx ?? null;
@@ -115,7 +123,11 @@ export class Audio {
 
   startAmbience(mood = 0) {
     const ctx = this.ctx ?? null;
-    if (!ctx || this.amb) { if (ctx) this.setAmbienceMood(mood); return; }
+    // 静音态下连环境音的那 5 个振荡器 + LFO + 循环噪声都不许建起来：记下想要的
+    // mood，等 setEnabled(true) 再补。建了再把 gain 设 0 仍然是"假静音"。
+    this._wantAmb = clamp(Number(mood) || 0, 0, 2);
+    if (!this.enabled) return;
+    if (!ctx || this.amb) { if (ctx && this.amb) this.setAmbienceMood(mood); return; }
     const pad = ctx.createGain(); pad.gain.value = 0.0001;
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 200; lp.Q.value = 3; pad.connect(lp).connect(this.ambGain);
     const oscs = PAD.map(([f, type, lvl, m]) => {
@@ -147,6 +159,7 @@ export class Audio {
     const ctx = this.ctx ?? null; if (!ctx || !this.amb) return;
     const amb = this.amb, t = ctx.currentTime, end = t + 1.8;
     this.amb = null; clearInterval(this.timer); this.timer = null;
+    this._wantAmb = null;
     this.ambGain.gain.setTargetAtTime(0.0001, t, 0.4); amb.pad.gain.setTargetAtTime(0.0001, t, 0.4);
     for (const o of amb.oscs) o.osc.stop(end);
     amb.lfo.stop(end); amb.air.stop(end);
@@ -162,6 +175,11 @@ export class Audio {
   _resume() {
     const ctx = this.ctx ?? null; if (!ctx || ctx.state !== 'suspended') return;
     const p = ctx.resume(); if (p && p.catch) p.catch(() => {});
+  }
+
+  _suspend() {
+    const ctx = this.ctx ?? null; if (!ctx || ctx.state !== 'running') return;
+    const p = ctx.suspend(); if (p && p.catch) p.catch(() => {});
   }
 
   // white noise grains + exponentially decaying filtered noise for the cathedral tail (1.4 s, mono)

@@ -5,6 +5,7 @@ import { ShaderPass } from '../../vendor/jsm/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from '../../vendor/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from '../../vendor/jsm/postprocessing/OutputPass.js';
 import { clamp, damp, RNG } from './rng.js';
+import { prefersReducedMotion } from './motion.js';
 
 const cache = {};
 
@@ -373,12 +374,15 @@ gl_FragColor=vec4(col,1.0); }`,
   }
 
   shake(amp = 1, dur = 0.24) {
+    if (prefersReducedMotion()) return;   // 晃镜头是前庭敏感者的雷区，这里整条关掉
     this.shakeAmp = Math.max(this.shakeAmp, Math.min(amp, 3.2));
     this.shakeT = Math.max(this.shakeT, dur);
   }
 
   burst(x, y, z, o = {}) {
-    const n = Math.round((o.count ?? 12) * this.quality);
+    let n = Math.round((o.count ?? 12) * this.quality);
+    // 保留一颗火花：命中还得看得见，满屏粒子不行。
+    if (prefersReducedMotion()) n = Math.min(n, 1);
     const color = o.color instanceof THREE.Color ? o.color : new THREE.Color(o.color ?? '#ffca6a');
     for (let i = 0; i < n; i++) {
       this.sparks.emit(x + (Math.random() - 0.5) * (o.jitter ?? 0.2), y + (Math.random() - 0.5) * (o.jitter ?? 0.2), z + (Math.random() - 0.5) * (o.jitter ?? 0.2), {
