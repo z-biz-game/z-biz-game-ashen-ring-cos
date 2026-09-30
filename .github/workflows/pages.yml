@@ -20,13 +20,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # No bundler: the game ships plain ES modules, so the site is a file copy.
-      # Only these four paths are reachable from index.html — keep the server,
-      # electron shell and docs out of the artifact.
+      # 原来只拷 index.html/css/js/vendor —— 那样 manifest.webmanifest、sw.js、pwa-register.js、
+      # icons/、textures/、og/ 上了部署站全是 404，而本地 109 条断言一条都不会红（本地是从
+      # 仓库根直读的）。拷完立刻用同一条闸核对产物里引用是否齐全，漏拷在这一步就红。
       - name: Assemble static site
         run: |
           mkdir _site
-          cp index.html _site/
-          cp -r css js vendor _site/
+          cp index.html manifest.webmanifest sw.js pwa-register.js _site/
+          cp -r css js vendor icons textures og _site/
+          ./tools/check_refs.sh _site
+          echo "artifact: $(find _site -type f | wc -l) files, $(du -sh _site | cut -f1)"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

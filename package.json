@@ -9,7 +9,9 @@
     "dev": "node server.cjs 5173",
     "electron": "electron .",
     "verify": "bash tools/verify.sh",
-    "check": "for f in js/*.js js/*/*.js vendor/three.module.js; do node --check \"$f\" || exit 1; done && echo OK"
+    "check": "for f in js/*.js js/*/*.js sw.js pwa-register.js vendor/three.module.js; do node --check \"$f\" || exit 1; done && echo OK",
+    "check:refs": "bash tools/check_refs.sh",
+    "art": "python3 assets/gen/make_art.py"
   },
   "keywords": [
     "game",
@@ -32,8 +34,14 @@
   "build": {
     "appId": "com.zbiz.ashenring",
     "productName": "Ashen Ring",
-    "mac": { "category": "public.app-category.games" },
-    "win": { "target": "nsis" },
-    "linux": { "target": "AppImage" }
+    "mac": {
+      "category": "public.app-category.games"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
   }
 }
