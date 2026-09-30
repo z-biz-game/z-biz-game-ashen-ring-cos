@@ -3,6 +3,7 @@ import { View } from './engine/view.js';
 import { CameraRig } from './engine/camera.js';
 import { Input } from './engine/input.js';
 import { Audio } from './engine/audio.js';
+import { prefersReducedMotion } from './engine/motion.js';
 import { RNG, hashSeed, strFromSeed, clamp, damp, lerp } from './engine/rng.js';
 import { planDepth, buildRoomGrid } from './world/layout.js';
 import { buildRoom } from './world/build.js';
@@ -106,19 +107,135 @@ class Game {
     };
     this.canvas.addEventListener('click', () => {
       this.audio.unlock();
-      this.audio.setEnabled(this.settings.volume > 0);
-      this.audio.setVolume('master', this.settings.volume);
+      this.applyAudio();
       if (this.state === 'playing' && !this.input.locked) this.input.requestLock();
     });
-    window.addEventListener('keydown', (e) => {
-      if (e.code === 'KeyP' && (this.state === 'playing' || this.state === 'paused')) this.togglePause();
-    });
+    window.addEventListener('keydown', (e) => this.onKey(e));
+    window.addEventListener('fullscreenchange', () => this.syncChrome());
+    this.bindChrome();
+    this.bindTouchpad();
     window.addEventListener('beforeunload', () => writeSave(this.save));
+  }
+
+  // 音量和静音是两件事：静音走 Audio.setEnabled → suspend()（真正停掉音频线程），
+  // 音量只是 master gain。settings.muted 落盘，刷新后仍然是静音。
+  applyAudio() {
+    this.audio.setEnabled(!this.settings.muted && this.settings.volume > 0);
+    this.audio.setVolume('master', this.settings.volume);
+  }
+
+  bindChrome() {
+    const mute = document.getElementById('btnMute');
+    const full = document.getElementById('btnFullscreen');
+    if (mute) mute.addEventListener('click', () => this.toggleMute());
+    if (full) full.addEventListener('click', () => this.toggleFullscreen());
+    this.syncChrome();
+  }
+
+  toggleMute() {
+    this.settings.muted = !this.settings.muted;
+    this.applyAudio();
+    writeSave(this.save);
+    this.syncChrome();
+    this.hint(this.settings.muted ? '静音 · M 恢复声音' : '声音已恢复 · M 静音', 1400);
+    return !!this.settings.muted;
+  }
+
+  toggleFullscreen() {
+    if (document.fullscreenElement) {
+      const p = document.exitFullscreen?.();
+      if (p?.catch) p.catch(() => {});
+      return false;
+    }
+    const p = document.documentElement.requestFullscreen?.({ navigationUI: 'hide' });
+    if (p?.catch) p.catch(() => { this.hint('浏览器拒绝了全屏请求', 1800); });
+    this.syncChrome();
+    return true;
+  }
+
+  syncChrome() {
+    const mute = document.getElementById('btnMute');
+    if (mute) {
+      mute.setAttribute('aria-pressed', this.settings.muted ? 'true' : 'false');
+      mute.classList.toggle('muted', !!this.settings.muted);
+    }
+    const full = document.getElementById('btnFullscreen');
+    if (full) {
+      const on = !!document.fullscreenElement;
+      full.setAttribute('aria-pressed', on ? 'true' : 'false');
+      full.classList.toggle('on', on);
+    }
+  }
+
+  // 触摸按钮只带 data-act，动作名与键盘/手柄同一套，所以这里不需要第二张映射表。
+  bindTouchpad() {
+    const pad = document.getElementById('touchpad');
+    if (!pad) return;
+    for (const b of pad.querySelectorAll('[data-act]')) {
+      const act = b.dataset.act;
+      const down = (e) => { e.preventDefault(); b.classList.add('down'); this.input.touchPress(act); };
+      const up = () => { b.classList.remove('down'); this.input.touchRelease(act); };
+      b.addEventListener('pointerdown', down);
+      b.addEventListener('pointerup', up);
+      b.addEventListener('pointercancel', up);
+      b.addEventListener('pointerleave', up);
+      b.addEventListener('contextmenu', (e) => e.preventDefault());
+    }
+  }
+
+  // Enter/Space 开始、P 或 Space 暂停、R 重开、M 静音、F 全屏、H/? 教学。
+  // 战斗中的 Space/R/F/H 已经是翻滚/药瓶/交互/冲刺，所以这四个键只在非战斗屏接管。
+  onKey(e) {
+    if (e.repeat) return;
+    const t = e.target;
+    if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+    const playing = this.state === 'playing' || this.state === 'paused';
+    const code = e.code;
+    if (code === 'KeyP') { if (playing) { e.preventDefault(); this.togglePause(); } return; }
+    if (code === 'KeyM') { e.preventDefault(); this.toggleMute(); return; }
+    if (code === 'KeyF' && !playing) { e.preventDefault(); this.toggleFullscreen(); return; }
+    if ((code === 'KeyH' || code === 'Slash') && !playing) {
+      e.preventDefault();
+      if (this.hud.screensOpen === 'help') document.getElementById('btnHelpBack')?.click();
+      else document.getElementById('btnHelp')?.click();
+      return;
+    }
+    if (code === 'KeyR' && !playing && this.state !== 'draft') { e.preventDefault(); this.restartRun(); return; }
+    if ((code === 'Enter' || code === 'Space') && !playing && this.state !== 'draft') {
+      e.preventDefault();
+      this.clickPrimary();
+    }
+  }
+
+  // 确认键不自己拼流程，点当前屏幕上真正可见的那个主按钮。
+  clickPrimary() {
+    const order = this.hud.screensOpen === 'help' ? ['btnHelpBack']
+      : this.hud.screensOpen === 'hub' ? ['btnRun']
+        : this.hud.screensOpen === 'dead' ? ['btnRevive', 'btnToHub']
+          : this.hud.screensOpen === 'win' ? ['btnWinHub']
+            : this.hud.screensOpen === 'pause' ? ['btnResume']
+              : ['btnResumeRun', 'btnStart'];
+    for (const id of order) {
+      const el = document.getElementById(id);
+      if (!el || el.style.display === 'none' || el.classList.contains('hidden')) continue;
+      el.click();
+      return id;
+    }
+    return null;
+  }
+
+  // 重开 = 用同一个种子与职业重建整局：时钟、输入、粒子、玩家全部回到起点。
+  restartRun() {
+    const seed = this.run?.seedStr || '';
+    const cls = this.run?.classId || this.hub?.classId;
+    if (this.state === 'playing' || this.state === 'paused') this.hud.screen(null);
+    this.startRun(seed, cls);
+    return this.run?.seed || null;
   }
 
   applySettings() {
     this.view.setQuality(this.settings.quality);
-    this.audio.setVolume('master', this.settings.volume);
+    this.applyAudio();
     this.input.sensitivity = 0.0026;
     writeSave(this.save);
   }
@@ -173,7 +290,7 @@ class Game {
   // ------------------------------------------------------------------ run flow
   startRun(seedStr, classId, snapshot = null) {
     this.audio.unlock();
-    this.audio.setVolume('master', this.settings.volume);
+    this.applyAudio();
     const seed = snapshot?.seed || hashSeed(seedStr || String(Math.floor(Math.random() * 1e9)));
     this.run = {
       seed, seedStr: strFromSeed(seed),
@@ -196,6 +313,15 @@ class Game {
     this.plans = [0, 1, 2].map((d) => planDepth(master.fork(), d));
     const cls = CLASSES.find((c) => c.id === this.run.classId) || CLASSES[0];
     this.clearActors();
+    // 重开不留残值：时钟/顿帧/慢动作/过场/锁定/输入全部回到零。
+    this.time = 0;
+    this.hitStopT = 0;
+    this.slowT = 0;
+    this.cine = null;
+    this.lockTarget = null;
+    this.taunt = null;
+    this.projectiles = [];
+    this.input.reset();
     this.player = new Player(this, cls);
     this.view.scene.add(this.player.mesh);
     this.run.rerolls = this.player.recompute(this.run.relics, this.run.curses, this.save.upgrades).rerolls;
@@ -881,13 +1007,14 @@ class Game {
   }
 
   menuStep(dt) {
-    this.menuAngle += dt * 0.075;
+    const calm = prefersReducedMotion();
+    if (!calm) this.menuAngle += dt * 0.075;
     if (!this.room) return;
     const g = this.room.gracePos || { x: 0, z: 0 };
     const r = 9.5;
     this.view.camera.position.set(g.x + Math.cos(this.menuAngle) * r, 3.2 + Math.sin(this.menuAngle * 0.7) * 0.8, g.z + Math.sin(this.menuAngle) * r);
     this.view.camera.lookAt(g.x, 1.35, g.z);
-    if (Math.random() < dt * 12) this.view.burst(g.x + (Math.random() - 0.5) * 1.2, 0.4, g.z + (Math.random() - 0.5) * 1.2, { count: 1, color: '#ffd487', speed: 0.6, life: 2.2, up: 1.5, gravity: 0.2 });
+    if (!calm && Math.random() < dt * 12) this.view.burst(g.x + (Math.random() - 0.5) * 1.2, 0.4, g.z + (Math.random() - 0.5) * 1.2, { count: 1, color: '#ffd487', speed: 0.6, life: 2.2, up: 1.5, gravity: 0.2 });
     this.view.setLamps(this.room.nearestLamps(this.view.camera.position, Math.min(5, this.view.preset.lamps)));
     this.room.update(this.time);
     this.view.followSun(this.view.camera.position.x, 0, this.view.camera.position.z);
@@ -919,6 +1046,9 @@ class Game {
       }
       this.updateHud();
       this.checkBuffs(dt);
+    } else if (this.state === 'paused') {
+      // 暂停要真的冻住：时钟、房间动画、粒子一概不推进，只留手柄轮询和下面的重绘。
+      this.input.pollPad();
     } else {
       this.time += raw;
       // menus never call step(), so without this the pad stops polling and the

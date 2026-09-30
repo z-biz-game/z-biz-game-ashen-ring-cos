@@ -55,6 +55,29 @@
       <div class="tb-right">
         <span class="rune-icon">◈</span><span id="runesNow">0</span>
         <span class="dim" id="runesLost"></span>
+        <button id="btnMute" class="icon-btn" type="button" aria-pressed="false" title="静音 (M)">♪</button>
+        <button id="btnFullscreen" class="icon-btn" type="button" aria-pressed="false" title="全屏 (F)">⛶</button>
+      </div>
+    </div>
+
+    <!-- 触摸操作层：data-act 就是 Input 的 action 名，主程序只认这一个映射表 -->
+    <div id="touchpad">
+      <div class="tp-cluster">
+        <div class="tp-row">
+          <button class="tp-btn" type="button" data-act="parry">弹反</button>
+          <button class="tp-btn" type="button" data-act="block">格挡</button>
+        </div>
+        <div class="tp-row">
+          <button class="tp-btn wide" type="button" data-act="light">轻击</button>
+          <button class="tp-btn wide" type="button" data-act="heavy">重击</button>
+        </div>
+      </div>
+      <div class="tp-strip">
+        <button class="tp-btn" type="button" data-act="roll">翻滚</button>
+        <button class="tp-btn" type="button" data-act="lock">锁定</button>
+        <button class="tp-btn" type="button" data-act="interact">交互</button>
+        <button class="tp-btn" type="button" data-act="estus">药瓶</button>
+        <button class="tp-btn" type="button" data-act="ash">灰烬</button>
       </div>
     </div>
 
