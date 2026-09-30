@@ -30,6 +30,9 @@ jobs:
           test -f index.html
           grep -q './js/main.js' index.html
           grep -q '"three": "./vendor/three.module.js"' index.html
+          # 页面与 manifest 的引用是否真在盘上、位图是不是真 PNG。Pages 那份 cp 清单是手写的，
+          # 漏拷只会让部署站 404，本地从仓库根直读永远看不出来 —— 所以在 PR 闸里先跑一遍。
+          ./tools/check_refs.sh
 
   # 真浏览器闸。verify.sh 之前从没在任何 CI 里跑过（这个仓原先只有 pages.yml），
   # 而它需要有人先把 server.cjs 起起来——README 里写了要 npm start，脚本自己不启动。

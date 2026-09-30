@@ -1,0 +1,34 @@
+{
+  "name": "灰烬王冠 Ashen Ring",
+  "short_name": "Ashen Ring",
+  "description": "浏览器原生 3D 魂系肉鸽：程序化地城、无敌帧翻滚、完美弹反、营火轮回、圣物三选一、三场首领战。",
+  "id": "com.zbiz.ashenring",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "start_url": "./?source=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["fullscreen", "standalone", "window-controls-overlay"],
+  "orientation": "landscape",
+  "background_color": "#07080c",
+  "theme_color": "#07080c",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-1024.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "screenshots": [
+    {
+      "src": "./og/ashen-ring-og-1200x630.png",
+      "sizes": "1200x630",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "灰烬王冠：裂开的五齿王冠坐在三段断裂的灰烬之环里"
+    }
+  ],
+  "shortcuts": [
+    { "name": "继续轮回", "short_name": "继续", "url": "./?source=pwa&resume=1", "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}
