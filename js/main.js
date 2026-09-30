@@ -14,7 +14,7 @@ import { Boss } from './entities/boss.js';
 import { HUD } from './ui/hud.js';
 import { HubUI } from './ui/hub.js';
 import { CLASSES, RELICS, DEPTH_MODIFIERS } from './meta/content.js';
-import { loadSave, writeSave, saveRun, loadRun, clearRun } from './meta/save.js';
+import { loadSave, writeSave, saveRun, loadRun, clearRun, sanitizeSave } from './meta/save.js';
 
 const HINTS = {
   move: 'WASD 移动 · 鼠标转视角 · <kbd>空格</kbd>翻滚（有无敌帧）',
@@ -72,8 +72,9 @@ class Game {
     this.input = new Input(canvas);
     this.audio = new Audio();
     window.__ashenAudio = this.audio;
-    this.save = loadSave();
+    this.save = sanitizeSave(loadSave());
     this.settings = this.save.settings;
+    this.applyAudio();
     this.input.applyPadBinds(this.settings.pad);
     this.hud = new HUD(this);
     this.state = 'boot';
