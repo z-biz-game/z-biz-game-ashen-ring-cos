@@ -7,11 +7,18 @@
 # 一条都不会红 —— 因为浏览器根本没在"前缀 + 只拷四个路径"的那个环境下跑过。
 #
 #   ./tools/check_refs.sh            # 查仓库
-#   ./tools/check_refs.sh _site      # 查已组装好的产物
+#   ./tools/check_refs.sh _site      # 查已组装好的产物（相对路径，pages.yml 就是这么传的）
+#
+# 传相对目录时下面会 cd 进去，所以 $ROOT 必须先绝对化再交给后面的消费者：位图那一段
+# 是 `python3 - "$ROOT"`、拿 os.path.join(root, rel) 拼路径，留着 "_site" 就会去找
+# _site/_site/icons/icon-1024.png，把一份完好的产物报成 MISSING（2026-09-30 与 10-02
+# 两次 Pages 红就是这个，不是缺文件）。默认走 $HERE（绝对）时症状不出现，所以这条
+# 形态由 ci.yml 的 check 任务显式跑一遍兜住，别只测绝对路径那半边。
 set -u
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 ROOT=${1:-$HERE}
 cd "$ROOT" || { echo "no such dir: $ROOT" >&2; exit 2; }
+ROOT=$(pwd)   # 唯一权威值：cd 之后取绝对路径，相对入参在这里被归一
 fail=0
 
 check() { # $1 = 相对路径, $2 = 出处

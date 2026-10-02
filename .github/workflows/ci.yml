@@ -34,6 +34,30 @@ jobs:
           # 漏拷只会让部署站 404，本地从仓库根直读永远看不出来 —— 所以在 PR 闸里先跑一遍。
           ./tools/check_refs.sh
 
+      # 回归位：Pages 那条闸传的是**相对**目录（`./tools/check_refs.sh _site`），而 check_refs.sh
+      # 自己会 cd 进去。它曾把没绝对化的 $ROOT 直接交给拼路径的位图段，于是去找
+      # _site/_site/icons/icon-1024.png，把一份完好的产物报成 MISSING —— Pages 连红两次
+      # （2026-09-30 / 10-02，站冻结在 09-28），CI 却全绿，因为它只跑过仓库根那半边。
+      # 下面这份 cp 清单必须与 pages.yml 的"Assemble static site"逐行相同，改那边记得改这里。
+      # 负控同样不可省：只测"相对路径能绿"的闸，被改成永远绿也照样通过。
+      - name: Artifact shape (check_refs over a RELATIVE _site, with negative control)
+        run: |
+          mkdir _site
+          cp index.html manifest.webmanifest sw.js pwa-register.js _site/
+          cp -r css js vendor icons textures og _site/
+          ./tools/check_refs.sh _site
+          mv _site/icons/icon-1024.png _site/icons/icon-1024.png.aside
+          set +e
+          out=$(./tools/check_refs.sh _site 2>&1); rc=$?
+          set -e
+          mv _site/icons/icon-1024.png.aside _site/icons/icon-1024.png
+          printf '%s\n' "$out"
+          [ "$rc" -ne 0 ] || { echo 'NEGATIVE CONTROL FAILED: 抽掉位图闸仍然绿'; exit 1; }
+          printf '%s\n' "$out" | grep -q 'icons/icon-1024.png' \
+            || { echo 'NEGATIVE CONTROL FAILED: 红了却没点名 icons/icon-1024.png'; exit 1; }
+          echo "negative control ok: rc=$rc，缺位图时点名报错"
+          rm -rf _site
+
   # 真浏览器闸。verify.sh 之前从没在任何 CI 里跑过（这个仓原先只有 pages.yml），
   # 而它需要有人先把 server.cjs 起起来——README 里写了要 npm start，脚本自己不启动。
   # 109 = @combat(22) + @spell(8) + @save(17) + @run(62)，2026-09-28 本机两跑出来的条数：
