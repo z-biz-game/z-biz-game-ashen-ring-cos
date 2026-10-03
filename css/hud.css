@@ -276,6 +276,9 @@ kbd { font-family: var(--sans); font-size: 11px; padding: 3px 7px; border: 1px s
   #minimap { display: none; }
   #relicList { display: none; }
   .card { width: 45vw; min-height: 210px; }
+  /* 命运种子输入框：390×844 实测 130x33，是这一屏唯一低于 44px 指尖下限的控件。
+     它决定开哪一局，点不中就只能随机。 */
+  .seed-row input { min-height: 44px; }
 }
 
 /* ------------------------------------------------------- 移动端 / 无障碍 精修 */
@@ -316,6 +319,24 @@ kbd { font-family: var(--sans); font-size: 11px; padding: 3px 7px; border: 1px s
 
 /* 命中区：44px 是手指的下限，原来 .btn.tiny/.padkey 只有 20 来像素高。 */
 .btn, .btn.small, .btn.tiny, .tab, .padkey, .opt select, .opt input[type=range] { min-height: 44px; }
+/* 这两枚设置项是原生 checkbox：自己的盒子 13x13，旁边那行 12.5px 的字撑出来的整行也才 17px 高
+   （把隐藏面板全部揭开来量才看得见，开局那一屏扫不到它们）。开关的图形仍是那枚 20px 的方框，
+   只是挪到 ::before 上画，可点盒撑到 44x44——勾一下落空、再勾一下把另一条设置改了，是这类开关
+   在手机上最常见的误操作。 */
+.opt input[type=checkbox] {
+  -webkit-appearance: none; appearance: none; position: relative; flex: 0 0 auto;
+  width: 44px; height: 44px; margin: 0; background: none; border: 0;
+  cursor: pointer; pointer-events: auto;
+}
+.opt input[type=checkbox]::before {
+  content: ''; position: absolute; left: 12px; top: 12px; width: 20px; height: 20px;
+  border: 1px solid var(--line); background: rgba(0, 0, 0, 0.5);
+}
+.opt input[type=checkbox]:checked::before { border-color: var(--gold-hi); background: rgba(201, 162, 74, 0.22); }
+.opt input[type=checkbox]:checked::after {
+  content: '\2713'; position: absolute; left: 15px; top: 11px;
+  color: var(--gold-hi); font-size: 15px; line-height: 1;
+}
 .tab { display: inline-flex; align-items: center; }
 .padkey { gap: 12px; }
 .opt { margin-bottom: 16px; }
