@@ -55,7 +55,7 @@ jobs:
           [ "$rc" -ne 0 ] || { echo 'NEGATIVE CONTROL FAILED: 抽掉位图闸仍然绿'; exit 1; }
           printf '%s\n' "$out" | grep -q 'icons/icon-1024.png' \
             || { echo 'NEGATIVE CONTROL FAILED: 红了却没点名 icons/icon-1024.png'; exit 1; }
-          echo "negative control ok: rc=$rc，缺位图时点名报错"
+          echo "negative control ok: rc=${rc}，缺位图时点名报错"
           rm -rf _site
 
   # 真浏览器闸。verify.sh 之前从没在任何 CI 里跑过（这个仓原先只有 pages.yml），
