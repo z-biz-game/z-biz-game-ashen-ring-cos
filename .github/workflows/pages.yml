@@ -20,6 +20,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # No bundler: the game ships plain ES modules, so the site is a file copy.
+      # 注意 `_site` 是相对路径：cd 进产物目录再由闸拼绝对路径，这是仓库根那跑不出来的形态
+      # （2026-09-30/10-02 两次红就是这个）。ci.yml 的 check 任务原样跑这份清单 + 一个负控，
+      # 改了这里的 cp 清单记得同步那里。
       # 原来只拷 index.html/css/js/vendor —— 那样 manifest.webmanifest、sw.js、pwa-register.js、
       # icons/、textures/、og/ 上了部署站全是 404，而本地 109 条断言一条都不会红（本地是从
       # 仓库根直读的）。拷完立刻用同一条闸核对产物里引用是否齐全，漏拷在这一步就红。

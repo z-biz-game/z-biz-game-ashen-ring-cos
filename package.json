@@ -8,6 +8,7 @@
     "start": "node server.cjs",
     "dev": "node server.cjs 5173",
     "electron": "electron .",
+    "test": "npm run check && npm run check:refs",
     "verify": "bash tools/verify.sh",
     "check": "for f in js/*.js js/*/*.js sw.js pwa-register.js vendor/three.module.js; do node --check \"$f\" || exit 1; done && echo OK",
     "check:refs": "bash tools/check_refs.sh",
