@@ -205,10 +205,24 @@ export class Player {
     if (inp.justPressed('lock')) this.toggleLock(game, locked);
 
     if (inp.justPressed('interact')) this.tryInteract(game);
-    if (inp.justPressed('estus') && this.canAct && this.estus > 0 && this.s.estusMax > 0 && this.hp < this.maxHp) {
-      this.setState('drink', 0.68);
-      this.estusUsed = false;
-      game.audio.play('estus');
+    // 原素瓶：按 R。三种按不下去的情况都要说得出来——"没带瓶子""瓶子空了""血是满的"。
+    // 原来这三个条件是把整条 if 挡掉：玩家按了键，屏幕上什么也没发生，分不清是自己
+    // 没按上还是游戏坏了。拒绝不消耗任何东西：不改瓶数、不改血、不进撤销栈。
+    if (inp.justPressed('estus') && this.canAct) {
+      if (this.s.estusMax <= 0) {
+        game.hud.toast('没有携带原素瓶', 'NO ESTUS CARRIED');
+        game.audio.play('uiBack', { vol: 0.4 });
+      } else if (this.estus <= 0) {
+        game.hud.toast('原素瓶已空', 'ESTUS EMPTY');
+        game.audio.play('uiBack', { vol: 0.4 });
+      } else if (this.hp >= this.maxHp) {
+        game.hud.toast('生命已满', 'ALREADY AT FULL HEALTH');
+        game.audio.play('uiBack', { vol: 0.4 });
+      } else {
+        this.setState('drink', 0.68);
+        this.estusUsed = false;
+        game.audio.play('estus');
+      }
     }
     if (inp.justPressed('ash') && this.canAct) this.summon(game);
     for (const k of ['spell1', 'spell2', 'spell3']) {

@@ -60,10 +60,10 @@ jobs:
 
   # 真浏览器闸。verify.sh 之前从没在任何 CI 里跑过（这个仓原先只有 pages.yml），
   # 而它需要有人先把 server.cjs 起起来——README 里写了要 npm start，脚本自己不启动。
-  # 109 = @combat(22) + @spell(8) + @save(17) + @run(62)，2026-09-28 本机两跑出来的条数：
+  # 116 = @combat(25) + @spell(8) + @save(21) + @run(62)，2026-09-28 本机两跑出来的条数：
   # 一次对 node server.cjs 5173 的根形态，一次对已部署的 Pages 站，都是 fail: [] + === ALL GREEN ===。
   browser:
-    name: real browser gate (109 assertions, both URL shapes)
+    name: real browser gate (116 assertions, both URL shapes)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

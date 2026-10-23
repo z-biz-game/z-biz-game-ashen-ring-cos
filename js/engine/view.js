@@ -433,7 +433,16 @@ gl_FragColor=vec4(col,1.0); }`,
       this.shakeT -= dt;
       const k = clamp(this.shakeT / 0.24, 0, 1);
       const a = this.shakeAmp * k * k * 0.16;
-      this._camOffset.set((Math.random() - 0.5) * a, (Math.random() - 0.5) * a, (Math.random() - 0.5) * a);
+      // 抖动的位移取自仿真钟（this.time），不是每帧掷一次骰子。逐帧随机时，
+      // 同一个虚拟时刻在 30/60/120Hz 上是三段互不相同的抖动轨迹——同样的受击，
+      // 在 120Hz 的屏上抖得更碎。三条互不通约的正弦叠起来读起来仍然是"抖"，
+      // 但同一时刻落在同一个点上。
+      const t = this.time;
+      this._camOffset.set(
+        Math.sin(t * 61.7) * a,
+        Math.cos(t * 47.3) * a * 0.85,
+        Math.sin(t * 39.1 + 1.7) * a * 0.6,
+      );
     } else { this.shakeAmp = 0; this._camOffset.multiplyScalar(damp(1, 0, 18, dt)); }
     for (let i = 0; i < this.lampPool.length; i++) {
       const l = this.lampPool[i];

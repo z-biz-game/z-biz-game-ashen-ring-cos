@@ -283,6 +283,26 @@ const SCENARIOS = {
     rec('parry window + counter', pt > 0 && P.hp === hpAtParry && (e.state === 'stagger' || e.vulnerableUntil > g.time), { parryT: +pt.toFixed(2), dhp: Math.round(hpAtParry - P.hp), foeState: e.state, vuln: +(e.vulnerableUntil - g.time).toFixed(2) });
     e.state = 'idle'; e.vulnerableUntil = 0;
 
+    // G2: the parry window IS the backstab window the README promises.
+    // Old code: vulnerableUntil was read only by the enemy's damage step (the x1.65
+    // stagger bonus); rollDamage never looked at it, so a parried foe that had
+    // already been hit could not be backstabbed at all. Whether the x2 landed
+    // depended on the invisible "has this foe ever been hit" flag instead of on
+    // the parry: same parry, same window, 13 damage or 26 depending on history.
+    reset(); P.hp = P.maxHp; myHits.length = 0; foeHits.length = 0;
+    e.hp = 4000; e.recentHit = true; e.state = 'idle'; e.vulnerableUntil = 0;
+    await tap('KeyU'); await wait(60);
+    e.strike(g, 1.8);
+    await until(() => P.state === 'idle', 2000, 20);
+    const vulnLeft = +(e.vulnerableUntil - g.time).toFixed(2);
+    // circle behind the staggered foe and hit it there
+    e.pos.set(0, 0, 2.0); e.yaw = Math.PI;
+    P.pos.set(0, 0, 3.6); P.yaw = Math.PI;
+    await tap('KeyJ'); await until(() => foeHits.length > 0, 1800, 20);
+    const punish = foeHits[0];
+    rec('parry window is the backstab window', vulnLeft > 0 && !!punish && punish.backstab && punish.dmg > (frontHit?.dmg || 13) * 1.6, { vulnLeft, punish, plainFront: frontHit });
+    e.state = 'idle'; e.vulnerableUntil = 0; e.recentHit = 0;
+
     // H: roll i-frames
     reset(); put(1.6); P.hp = P.maxHp; myHits.length = 0;
     const stR = P.stamina;
@@ -352,6 +372,29 @@ const SCENARIOS = {
     reset(); P.hp = 60; const est0 = P.estus;
     await tap('KeyR'); await wait(1100);
     rec('estus heals', P.estus === est0 - 1 && P.hp > 60, { estus: est0 + '->' + P.estus, hp: 60 + '->' + Math.round(P.hp) });
+
+    // L2: the two ways the flask key can be refused have to be perceivable, and
+    // neither of them may cost anything. Before this, pressing R with an empty
+    // flask (or at full health) did nothing at all: no sound, no message, no state
+    // change — the player could not tell a dead key from a broken game.
+    reset();
+    P.hp = P.maxHp; P.estus = 0;
+    const toastBox = document.getElementById('toasts');
+    const toastTexts = () => Array.from(toastBox.children).map((el) => (el.textContent || '').replace(/\s+/g, ' ').trim());
+    const toastHas = (needle) => toastTexts().some((t) => t.includes(needle));
+    // Measuring "a toast appeared" by counting the box's children is a blind
+    // spot: the HUD keeps at most four of them and drops the oldest, so once the
+    // box is full the count stops growing even though the refusal was announced.
+    // Count the *message* instead — that is what this assertion is about.
+    const hadEmpty = toastHas('原素瓶已空');
+    await tap('KeyR'); await wait(140);
+    rec('an empty flask says so and costs nothing', !hadEmpty && toastHas('原素瓶已空') && P.estus === 0 && P.hp === P.maxHp && P.state !== 'drink',
+      { toasts: toastTexts(), estus: P.estus, hp: Math.round(P.hp), state: P.state });
+    P.estus = 1; P.hp = P.maxHp;
+    const hadFull = toastHas('生命已满');
+    await tap('KeyR'); await wait(140);
+    rec('a full health bar says so and does not drink', !hadFull && toastHas('生命已满') && P.estus === 1 && P.state !== 'drink',
+      { toasts: toastTexts(), estus: P.estus, hp: Math.round(P.hp), state: P.state });
 
     // M: spell cast costs FP
     const spells = P.spells.slice();
@@ -564,6 +607,37 @@ const SCENARIOS = {
     rec('import restores progression through the UI', g.save.marks === 137 && g.save.upgrades.vigor === 3 && g.save.codex.relics.ember_signet === 3, { marks: g.save.marks, pad: g.input.padBinds.light });
     rec('imported pad bindings take effect immediately', g.input.padBinds.light === 3, { light: g.input.padBinds.light });
     g.save = prev; g.settings = prev.settings; g.input.applyPadBinds(prev.settings.pad); writeSave(prev);
+    // ---- the run snapshot is a localStorage record too, and it gets the same
+    // two-stage treatment: a snapshot that cannot be trusted is dropped — that one
+    // record — and the meta save is left exactly as it was. Before this, the resume
+    // path took the snapshot's depth verbatim, so depth 99 made this.plans[99]
+    // undefined and startRun threw; the click handler died, the state machine stayed
+    // on 'title' and the half-built world stayed on screen: the game was stuck.
+    const { loadRun, sanitizeRun, clearRun } = S;
+    const prevRun = localStorage.getItem('ashen_ring_run_v1');
+    localStorage.setItem('ashen_ring_run_v1', JSON.stringify({ seed: 123, depth: 99, roomIdx: 0, relics: ['nope'] }));
+    const loaded = loadRun();
+    rec('a garbage run snapshot in storage is clamped, not trusted', !!loaded && loaded.depth === 2 && loaded.relics.length === 0 && loaded.classId === 'ashen_knight',
+      { loaded });
+    rec('the meta save is untouched by a garbage run snapshot', g.save.marks === prev.marks && JSON.stringify(g.save.upgrades) === JSON.stringify(prev.upgrades),
+      { marks: g.save.marks, prev: prev.marks });
+    const clamped = sanitizeRun({ seed: 7, depth: 99, roomIdx: 999, relics: ['nope'], curses: ['nope'], classId: 'nope', runes: -5, revives: 99, hpFrac: 7 });
+    rec('an out-of-range run snapshot is clamped field by field', !!clamped && clamped.depth === 2 && clamped.roomIdx === 63
+      && clamped.relics.length === 0 && clamped.curses.length === 0 && clamped.classId === 'ashen_knight'
+      && clamped.runes === 0 && clamped.revives === 3 && clamped.hpFrac === 1, { clamped });
+    rec('a run snapshot without a seed is dropped', sanitizeRun({ depth: 1 }) === null && sanitizeRun(null) === null && sanitizeRun('nope') === null, {});
+    // End-to-end: the resume path itself. A snapshot with an impossible depth used to
+    // blow up inside startRun ("Cannot read properties of undefined (reading 'rooms')"),
+    // the click handler died, the state machine stayed on 'title' and the half-built
+    // world stayed on screen — the game was stuck. It must come back playable.
+    let resumeThrew = null;
+    try {
+      g.startRun('', 'ashen_knight', { seed: 123, depth: 99, roomIdx: 0, relics: ['nope'], curses: [], classId: 'nope', runes: 5, revives: 1, hpFrac: 0.5 });
+    } catch (e) { resumeThrew = String((e && e.message) || e); }
+    await wait(200);
+    rec('a garbage snapshot cannot freeze the resume path', !resumeThrew && g.state === 'playing' && g.run.depth <= 2 && g.run.roomIdx >= 0,
+      { threw: resumeThrew, state: g.state, depth: g.run.depth, room: g.run.roomIdx });
+    if (prevRun === null) clearRun(); else localStorage.setItem('ashen_ring_run_v1', prevRun);
     return { codeLen: code.length, rows, fail: rows.filter((r) => !r.pass).map((r) => r.test) };
   })()`,
   balance: `(async () => {

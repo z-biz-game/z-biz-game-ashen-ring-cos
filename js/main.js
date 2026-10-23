@@ -341,13 +341,17 @@ class Game {
   enterRoom(depthIdx, roomIdx) {
     this.cine = null;
     this.input.frozen = false;
-    this.run.depth = depthIdx;
-    this.run.roomIdx = roomIdx;
-    const plan = this.plans[depthIdx];
-    const spec = plan.rooms[Math.min(roomIdx, plan.rooms.length - 1)];
-    this.depthMod = DEPTH_MODIFIERS[depthIdx];
-    const rng = new RNG(hashSeed(this.run.seed + ':' + depthIdx + ':' + roomIdx));
-    const layoutRoom = buildRoomGrid(rng, spec, { depth: depthIdx });
+    // 深度与房间号都要夹进这一局真的有的范围。HUD 印的是"进 N/总数"、血印比对
+    // 用的也是这个 N：越界的值存进存档后，读数与"回到那一间取回"会一起失真。
+    const depth = Math.max(0, Math.min(depthIdx | 0, this.plans.length - 1));
+    const plan = this.plans[depth];
+    const room = Math.max(0, Math.min(roomIdx | 0, plan.rooms.length - 1));
+    this.run.depth = depth;
+    this.run.roomIdx = room;
+    const spec = plan.rooms[room];
+    this.depthMod = DEPTH_MODIFIERS[depth];
+    const rng = new RNG(hashSeed(this.run.seed + ':' + depth + ':' + room));
+    const layoutRoom = buildRoomGrid(rng, spec, { depth });
     this.loadRoom(layoutRoom, this.depthMod, rng);
     this.view.setMood(plan);
     this.clearActors();

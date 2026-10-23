@@ -1,5 +1,13 @@
+import { RELICS, CURSES, CLASSES, DEPTH_MODIFIERS } from './content.js';
+
 const SAVE_KEY = 'ashen_ring_save_v1';
 const RUN_KEY = 'ashen_ring_run_v1';
+
+// 已知的 id 白名单：run 快照里的每一个 id 都要在这里对得上才算数。
+// content.js 是纯数据模块（自己没有 import），所以这里不构成循环依赖。
+const RELIC_IDS = new Set(RELICS.map((r) => r.id));
+const CURSE_IDS = new Set(CURSES.map((c) => c.id));
+const CLASS_IDS = new Set(CLASSES.map((c) => c.id));
 
 export const DEFAULT_SAVE = {
   marks: 0,
@@ -11,6 +19,10 @@ export const DEFAULT_SAVE = {
 };
 
 function clone(o) { return JSON.parse(JSON.stringify(o)); }
+
+// 数字夹进区间：不是有限数就落回默认值。存档码、meta 存档、run 快照三处共用。
+const clampNum = (v, lo, hi, dflt = 0) =>
+  (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : dflt);
 
 function merge(base, got) {
   const out = clone(base);
@@ -46,12 +58,42 @@ export function saveRun(snapshot) {
   try { localStorage.setItem(RUN_KEY, JSON.stringify(snapshot)); } catch { /* ignore */ }
 }
 
+// The run snapshot is the one record in localStorage that another build (or a
+// hand-edited value) can put there, so it gets the same two-stage treatment as
+// the meta save: every field is checked before it is allowed to reach the game.
+// A snapshot that cannot be trusted is dropped — that one record — and the meta
+// save (marks / upgrades / codex) is left exactly as it was.
+//
+// Why this matters (measured, not guessed): the resume path trusted the
+// snapshot's depth verbatim, so a snapshot with depth 99 made `this.plans[99]`
+// undefined and startRun threw "Cannot read properties of undefined (reading
+// 'rooms')". The click handler died, the state machine stayed on 'title' and
+// the half-built world was left on screen: the game was stuck, with no way out
+// but wiping the storage by hand.
+export function sanitizeRun(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const seed = clampNum(v.seed, 0, 0xffffffff, -1);
+  if (seed < 0) return null; // 没有种子 = 这一条记录读不懂
+  const idList = (list, known) => (Array.isArray(list) ? list.filter((x) => typeof x === 'string' && known.has(x)) : []);
+  return {
+    seed,
+    classId: typeof v.classId === 'string' && CLASS_IDS.has(v.classId) ? v.classId : 'ashen_knight',
+    depth: Math.round(clampNum(v.depth, 0, DEPTH_MODIFIERS.length - 1, 0)),
+    roomIdx: Math.round(clampNum(v.roomIdx, 0, 63, 0)),
+    runes: Math.round(clampNum(v.runes, 0, 1e9, 0)),
+    relics: idList(v.relics, RELIC_IDS),
+    curses: idList(v.curses, CURSE_IDS),
+    revives: Math.round(clampNum(v.revives, 0, 3, 1)),
+    hpFrac: clampNum(v.hpFrac, 0, 1, 1),
+    at: Math.round(clampNum(v.at, 0, Number.MAX_SAFE_INTEGER, 0)),
+  };
+}
+
 export function loadRun() {
   try {
     const raw = localStorage.getItem(RUN_KEY);
     if (!raw) return null;
-    const s = JSON.parse(raw);
-    return s && s.seed ? s : null;
+    return sanitizeRun(JSON.parse(raw));
   } catch { return null; }
 }
 
@@ -66,9 +108,6 @@ export function clearRun() {
 const CODE_PREFIX = 'ASHEN1';
 const CODE_VERSION = 1;
 const CODEX_INTS = ['runs', 'deaths', 'victories', 'bossKills', 'deepest', 'kills', 'bestRunes', 'parries', 'backstabs'];
-
-const clampNum = (v, lo, hi, dflt = 0) =>
-  (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : dflt);
 
 // Keys are user data from another machine: bound their length and drop anything
 // that is not a non-negative count, so a hand-edited code cannot poison a lookup.

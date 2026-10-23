@@ -24,7 +24,7 @@ npm start            # → http://127.0.0.1:5173
 ```bash
 npm run dev          # 指定端口：node server.cjs 5173
 npm run check        # 逐文件 node --check 语法门禁
-npm run verify       # 无头浏览器跑 109 项运行时断言（需本机 Chrome）
+npm run verify       # 无头浏览器跑 116 项运行时断言（需本机 Chrome）
 npm run electron     # 桌面壳启动（electron/main.cjs）
 ```
 
@@ -53,15 +53,15 @@ npm run electron     # 桌面壳启动（electron/main.cjs）
 | --- | --- | --- |
 | `W A S D` / 方向键 | 移动 | 相对镜头 |
 | 鼠标 / 右摇杆 | 转视角 | `Esc` 释放指针，支持反转 Y |
-| `J` / 左键 | 轻击 | 四段连击，输入缓冲 |
+| `J` / 左键 | 轻击 | 三段连击（持「第四响」圣物时四段），输入缓冲 |
 | `K` / RT | 重击 | 破韧、起手长、可打断敌人 |
 | `L` / `Shift` | 格挡 | 消耗体力，耗尽触发**架势崩溃** |
-| `U` / X | 弹反 | 0.19s 完美窗口（冷却 0.62s），成功使敌人硬直并可背刺 |
+| `U` / X | 弹反 | 0.19s 完美窗口（冷却 0.62s），成功使敌人硬直 1.25s，1.3s 惩罚窗口内伤害 ×1.65，从背后打再叠背刺 ×2 |
 | `Space` | 翻滚 | 无敌帧 0.30s（圣物可延长，上限 0.62s），消耗体力 |
 | `C` | 跳跃 | 越过矮墙与废墟 |
 | `Q` / `Tab` | 锁定 | 过肩镜头，自动保持目标在画面中 |
 | `F` / `E` | 交互 | 营火、雾门、匣子、圣坛、血印、传送 |
-| `R` | 原素瓶 | 治疗，消耗充能 |
+| `R` | 原素瓶 | 治疗，消耗充能。**按不下去时也会说话**：没带瓶子、瓶子空了、血是满的，各给一句提示与一声拒绝音，且什么都不消耗 |
 | `G` | 灰烬召唤 | 分身吸引仇恨（`game.taunt`） |
 | `1` `2` `3` | 法术 | 焰牙（弹道）/ 魂斩（波）/ 刃环（新星），消耗专注 FP |
 | `T` | 重掷 | 圣物三选一时更换候选（消耗一次） |
@@ -69,6 +69,9 @@ npm run electron     # 桌面壳启动（electron/main.cjs）
 
 **敌人可读性**：所有攻击都有 `windup` 预警动作与音效；`super: true` 的大体型招式无法被格挡硬吃，必须翻滚。
 **韧性/硬直**：伤害附带 poise 值，累积超过阈值触发 stagger，是重武器与法术的战术价值来源。
+**弹反的惩罚窗口**：弹反成功后敌人硬直 1.25s，并在 1.3s 内进入易伤——对它的一切伤害 ×1.65；
+这段时间里从背后打它还算背刺（再叠 ×2 倍率）。这条窗口只由弹反打开：吃不吃得到背刺看的是
+「它刚被弹反过」，不是「它此前挨没挨过打」。
 
 ### 体力经济 / Stamina
 
@@ -81,11 +84,23 @@ npm run electron     # 桌面壳启动（electron/main.cjs）
 | 动作 | 时长 | 面板消耗 | 净耗 | 满气可做 |
 | --- | --- | --- | --- | --- |
 | 轻击 L1 | 0.52s | 16 | 5.5 | 19 次 |
-| 完整四连 | 2.59s | 64 | 11.7 | 9 轮 |
+| 完整三连 | 1.80s | 48 | 11.7 | 9 轮 |
+| 完整四连（持「第四响」） | 2.59s | 64 | 11.7 | 9 轮 |
 | 重击 | 1.09s | 30 | 7.9 | 13 次 |
 | 翻滚 | 0.50s | 20 | 9.9 | 10 次 |
 
 空档回满：静止 2.4s，动作中 5.2s。所以真正的惩罚不是「打完一套没气」，而是**在锁定回复里贪最后一刀**。
+
+---
+
+## 无障碍 / Accessibility
+
+- **减少动态**：`prefers-reduced-motion: reduce` 下，镜头抖动整条关掉、粒子封顶 1 颗、菜单镜头不再环绕，
+  CSS 里那几套常驻动画（grain、伤害数字、横幅、结算标题）也一并停掉。
+- **指尖目标 ≥44px**：种子输入框在 390×844 上实测只有 130×33，是这一屏唯一低于下限的控件，已抬到 44px。
+- **读数用等宽数字**（`font-variant-numeric: tabular-nums`）：血/体力/专注条、圣物标签、结算表、强化费用
+  都是逐帧在变的数字，比例数字会让整段文字左右跳。
+- **帧率无关**：镜头抖动由仿真钟（`this.time`）派生，不是每帧掷骰子——30Hz 与 120Hz 读到同一条抖动曲线。
 
 ---
 
@@ -143,7 +158,7 @@ vendor/
 ├── three.module.js   Three.js 0.170
 └── jsm/…             postprocessing + shaders（EffectComposer / UnrealBloom / OutputPass）
 tools/
-├── playtest.mjs      CDP 驱动：109 项断言（@combat/@spell/@save/@run）+ @balance 平衡遥测
+├── playtest.mjs      CDP 驱动：116 项断言（@combat/@spell/@save/@run）+ @balance 平衡遥测
 └── verify.sh         一次性验证：真实 GPU + trap/看门狗收尾
 ```
 
@@ -279,6 +294,12 @@ ASHEN1-<base64url(payload)>.<7 位校验>
 - 校验和是 FNV-1a：少粘一个字符、粘错、中途改动都会在导入时报错，不会静默变成半份存档。
 - 导入的每一项都要过 `sanitizeSave()`：未知键丢弃、数值夹进区间、`upgrades`/`codex.relics` 的键必须匹配
   `^[\w-]{1,40}$`、`pad` 只收 0–31 的整数。存档码来自另一台机器，等于外部输入，不能直接对象展开就信。
+- **进行中的那一局（run 快照）也走同一套两段式解码**：`sanitizeRun()` 逐字段验明正身——深度夹进
+  0–2、房间号夹进 0–63、灰烬夹进非负、圣物/诅咒/职业的 id 必须对得上内容表、血量比例夹进 0–1。
+  验不过就**只丢这一条记录**（这一局不可续），meta 存档（印记/血脉/图鉴）一根汗毛都不动。
+  以前这里只有一句 `s.seed ? s : null`：快照里的深度被原样带进 `this.plans[depth]`，
+  一个越界的深度就让整条续局路炸在 `Cannot read properties of undefined (reading 'rooms')`——
+  点击处理器死在半路，状态机卡在 title，半建的场景还留在画面上。
 - 一局进行中导入只影响印记与图鉴，血脉/诅咒要下一轮才生效（界面上会写），因为本局的属性在开局就算完了。
 
 ---
@@ -290,7 +311,7 @@ ASHEN1-<base64url(payload)>.<7 位校验>
 
 ```bash
 npm start &          # 另一终端：静态服务器
-npm run verify       # tools/verify.sh：@combat(22) + @spell(8) + @save(17) + @run(62) = 109 项
+npm run verify       # tools/verify.sh：@combat(25) + @spell(8) + @save(21) + @run(62) = 116 项
 SCENARIOS="balance" npm run verify   # 另加 @balance：11 条门禁、~98 场对战
 ```
 
@@ -302,9 +323,9 @@ SCENARIOS="balance" npm run verify   # 另加 @balance：11 条门禁、~98 场�
 /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
   --headless=new --remote-debugging-port=9334 --window-size=820,620 about:blank &
 CDP_PORT=9334 node tools/playtest.mjs open http://127.0.0.1:5173/
-CDP_PORT=9334 node tools/playtest.mjs eval "@combat"   # 22 项战斗断言
+CDP_PORT=9334 node tools/playtest.mjs eval "@combat"   # 25 项战斗断言
 CDP_PORT=9334 node tools/playtest.mjs eval "@spell"    # 8 项法术 / 召唤 / 弹道
-CDP_PORT=9334 node tools/playtest.mjs eval "@save"     # 17 项存档码往返 / 篡改 / 类型投毒
+CDP_PORT=9334 node tools/playtest.mjs eval "@save"     # 21 项存档码往返 / 篡改 / 类型投毒
 CDP_PORT=9334 node tools/playtest.mjs eval "@run"      # 62 项三层通关流程
 CDP_PORT=9334 node tools/playtest.mjs eval "@balance"  # 平衡遥测：对战表 + 伤害表 + 11 条门禁
 
@@ -315,10 +336,10 @@ BASE_URL=https://z-biz-game.github.io/z-biz-game-ashen-ring-cos/ npm run verify
 每次 push 到 `main`，`.github/workflows/ci.yml` 会在 ubuntu runner 上把这条闸跑两遍：
 根形态（`node server.cjs 5173`）与 Pages 实际服务的前缀形态（一个只含本仓软链的目录交给
 `python3 -m http.server`）。2026-09-28 首跑的 runner 日志：两种形态各自打印
-`rows: 22 / 8 / 17 / 62，fail: []` 后 `=== ALL GREEN ===`，根形态 13.7 s、前缀形态 11.6 s。
+`rows: 25 / 8 / 21 / 62，fail: []` 后 `=== ALL GREEN ===`，根形态 13.7 s、前缀形态 11.6 s。
 runner 上 Chrome 会自己退回软件 WebGL（控制台留一句
 `Automatic fallback to software WebGL has been deprecated`），游戏照样 boot 出 `title`、
-109 条全过——所以 CI 不需要那套 flag。哪一天它变成红了，先去看 job 里那条只在失败时执行的
+116 条全过——所以 CI 不需要那套 flag。哪一天它变成红了，先去看 job 里那条只在失败时执行的
 诊断步，它会把 GL 上下文与页面 console 打在日志里；届时的修法是给 CI 单独加
 `--enable-unsafe-swiftshader`，那是对上面本机警告的一处有意例外，不是把它推广到本机。
 

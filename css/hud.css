@@ -43,6 +43,11 @@ body { user-select: none; cursor: default; }
 
 #hud { position: absolute; inset: 0; z-index: 3; pointer-events: none; font-family: var(--serif); }
 
+/* 数字读数一律用等宽数字（tabular-nums）。血量、层数/房间号、印记数、圣堂升级费用、
+   结算表——这些都是逐帧在变的读数，比例数字会让整段文字左右跳（"9/100" 变成
+   "100/100" 时，数字本身不动、后面的字也在动）。 */
+.bar span, .tag, .dead-stats b, .up-cost { font-variant-numeric: tabular-nums; }
+
 #topbar { position: absolute; top: 18px; left: 22px; right: 22px; display: flex; justify-content: space-between; align-items: center; letter-spacing: 0.16em; }
 #topbar .tb-left { display: flex; gap: 12px; }
 .tag { font-size: 13px; color: var(--gold-hi); text-transform: uppercase; padding: 3px 9px; border: 1px solid var(--line); background: rgba(8, 8, 12, 0.5); }

@@ -32,7 +32,13 @@ export function rollDamage(game, attacker, target, opts = {}) {
     const behind = Math.sin(target.yaw) * dx + Math.cos(target.yaw) * dz;
     const dot = (fx * dx + fz * dz) / (Math.hypot(dx, dz) || 1);
     const unaware = target.state !== 'combat' && target.state !== 'alert' && !target.recentHit;
-    if (dot > 0.86 && behind > 0 && (unaware || opts.forcedBackstab)) { dmg *= (as.backstabMul ?? 2); backstab = true; }
+    // 弹反给的惩罚窗口就是一次"强制背刺"的窗口。旧代码里这个窗口只有 enemy.js
+    // 读它（算 1.65 倍的硬直加伤），rollDamage 从来不看：于是 README 写的
+    // 「弹反成功 ⇒ 敌人硬直并可背刺」根本不会发生，能不能吃到 ×2 背刺取决于
+    // 敌人此前有没有挨过打（recentHit）—— 那是玩家看不见、也管不了的状态。
+    // vulnerableUntil 只由 Player.onParry 设置，所以它就是"刚刚被弹反过"。
+    const parried = (target.vulnerableUntil || 0) > (game.time || 0);
+    if (dot > 0.86 && behind > 0 && (unaware || parried || opts.forcedBackstab)) { dmg *= (as.backstabMul ?? 2); backstab = true; }
   }
   const armor = (target.s?.armor ?? 0) + (target.blocking ? (target.s?.guardArmor ?? 0) : 0);
   dmg *= armorFactor(armor);
