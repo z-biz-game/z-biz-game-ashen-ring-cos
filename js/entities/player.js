@@ -420,7 +420,7 @@ export class Player {
       game.audio.play('land', { vol: clamp(fallDist / 8, 0.4, 1) });
       game.view.shake(clamp(fallDist / 5, 0.3, 1.6));
       game.view.puff(this.pos.x, this.pos.y + 0.1, this.pos.z, { count: 10, color: '#736a5e', speed: 2.4, alpha: 0.4 });
-      if (dmg > 0) this.takeDamage(game, dmg, { fall: true, dirX: 0, dirZ: 0 });
+      if (dmg > 0) this.takeDamage(game, dmg, { fall: true, fallDist, dirX: 0, dirZ: 0 });
     } else if (fallDist > 0.6) game.audio.play('land', { vol: 0.45 });
     this.fallFrom = undefined;
   }

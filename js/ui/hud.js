@@ -194,6 +194,9 @@ export class HUD {
 
   showScreenDead(stats, canRevive) {
     const row = (k, v) => `<div>${k} <b>${v}</b></div>`;
+    // 死因：值由规则层算好（combat/hit.js describeDeath），这里只显示，不另写概括。
+    const cause = $('deadCause');
+    if (cause) cause.textContent = stats.cause || '';
     $('deadStats').innerHTML = [
       row('陨落之处', `${stats.depth} · 第 ${stats.room} 进`),
       row('失落灰烬', (stats.runes || 0).toLocaleString()),

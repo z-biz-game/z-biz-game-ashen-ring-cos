@@ -71,6 +71,28 @@ export function meleeArc(game, attacker, opts = {}) {
   return hits;
 }
 
+// 死因（设计标准 §6 / §10.3）：失败态必须回答"为什么输了"，而答案只能由规则层
+// 算出来 —— 谁打死的、怎么打死的，都已经在 takeDamage 的 info 里（from=攻击者，
+// heavy/magic/school=招式类型，fall=坠落），这里把它落成一句人话，视图只负责显示。
+// 注意这不是"把一句概括换个名字塞进引擎"：换掉任何一个攻击者/招式/落差，
+// 这句话都会跟着变（谁打的、用的哪一招、摔了多高都是当帧的真实状态）。
+export function describeDeath(info = {}) {
+  if (info.fall) {
+    const d = Number(info.fallDist);
+    return `死于坠落${Number.isFinite(d) ? `（落差 ${d.toFixed(1)} m）` : ''}`;
+  }
+  const from = info.from;
+  if (from) {
+    const who = from.title || from.cn || from.cfg?.cn || '不明之物';
+    const move = from.move?.cn;                     // 首领：当前正在出的那一招
+    const kind = info.heavy ? '重击'
+      : (info.magic || info.school === 'spell') ? '法术'
+      : from.cfg?.style === 'ranged' ? '远程箭' : '近战';
+    return `死于${who}的${move ? `「${move}」` : kind}`;
+  }
+  return '死于不明伤害';
+}
+
 export function aoe(game, origin, radius, dmgMul, opts = {}) {
   const list = opts.faction === 'foe' ? game.enemies : game.enemies.concat([game.player]);
   const out = [];

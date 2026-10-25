@@ -11,6 +11,7 @@ import { CELL } from './world/grid.js';
 import { Player } from './entities/player.js';
 import { Enemy, Ash, Projectile, ARCHETYPES } from './entities/enemy.js';
 import { Boss } from './entities/boss.js';
+import { describeDeath } from './combat/hit.js';
 import { HUD } from './ui/hud.js';
 import { HubUI } from './ui/hub.js';
 import { CLASSES, RELICS, DEPTH_MODIFIERS } from './meta/content.js';
@@ -690,6 +691,8 @@ class Game {
 
   onPlayerDeath(info = {}) {
     this.state = 'dying';
+    // 死因由规则层算（谁/怎么打死的），死亡面板只显示它 —— 见 combat/hit.js describeDeath。
+    this.run.deathCause = describeDeath(info);
     this.run.lostRunes = this.run.runes;
     this.run.runes = 0;
     this.run.bloodstain = { depth: this.run.depth, roomIdx: this.run.roomIdx, x: this.player.pos.x, z: this.player.pos.z, amount: this.run.lostRunes };
@@ -719,6 +722,7 @@ class Game {
       runes: this.run.lostRunes, kills: this.run.kills, relics: this.run.relics.length,
       bossKills: this.run.bossKills, time: Math.round((performance.now() - this.run.startedAt) / 1000),
       seed: this.run.seedStr, parries: this.run.parries, backstabs: this.run.backstabs,
+      cause: this.run.deathCause || '',
     };
   }
 

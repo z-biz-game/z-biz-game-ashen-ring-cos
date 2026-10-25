@@ -239,6 +239,7 @@ kbd { font-family: var(--sans); font-size: 11px; padding: 3px 7px; border: 1px s
 .died { font-family: var(--serif); font-size: clamp(46px, 9vw, 104px); letter-spacing: 0.22em; color: #b3372c; text-shadow: 0 0 60px rgba(150, 30, 20, 0.55); animation: diedIn 2.4s ease; }
 .died.victory { color: var(--gold-hi); text-shadow: 0 0 70px rgba(201, 162, 74, 0.6); }
 .died-cn { font-family: var(--serif); font-size: 17px; letter-spacing: 0.5em; color: #8d8474; margin-top: -6px; }
+.dead-cause { font-family: var(--serif); font-size: 15px; letter-spacing: 0.08em; color: #d9b98a; margin: 12px 0 2px; max-width: 720px; }
 @keyframes diedIn { from { opacity: 0; letter-spacing: 0.6em; filter: blur(6px); } }
 .dead-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 10px 26px; font-family: var(--serif); font-size: 14px; color: #a99f8d; letter-spacing: 0.1em; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 16px 22px; max-width: 720px; }
 .dead-stats b { color: var(--gold-hi); font-weight: 500; }
