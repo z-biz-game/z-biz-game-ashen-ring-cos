@@ -3,6 +3,7 @@ import { clamp, damp, angleDamp, lerp } from '../engine/rng.js';
 import { makeHumanoid, resetRig } from './parts.js';
 import { meleeArc, aoe } from '../combat/hit.js';
 import { resolveStats } from '../meta/stats.js';
+import { haptics } from '../haptics.js';
 
 const G = 23;
 const ROLL_DUR = 0.5;
@@ -309,6 +310,8 @@ export class Player {
 
   resolveSwing(game) {
     const mv = this.move;
+    // 触觉分级（003 §0）：玩家刚挥出一击 = 自己的动作 → 轻档 8ms
+    haptics.tap();
     const hits = meleeArc(game, this, {
       reach: mv.reach, arc: mv.arc, mul: mv.mul, school: mv.heavy ? 'heavy' : 'light',
       poise: mv.poise, heavy: mv.heavy, hitAll: !!mv.spin, maxHits: 4,
@@ -552,6 +555,8 @@ export class Player {
     this.iFrameT = Math.max(this.iFrameT, 0.22);
     if (!guarded) {
       game.audio.play('hurt', { vol: 0.9 });
+      // 触觉分级（003 §0）：玩家真挨了一下（没被格挡）= 坏结果 → 重档 [14,40,14]
+      haptics.wrong();
       game.view.shake(info.heavy ? 1.7 : 1.05, 0.26);
       game.input.rumble(0.35, info.heavy ? 0.85 : 0.4, info.heavy ? 220 : 120);
       game.hud.hitFlash();

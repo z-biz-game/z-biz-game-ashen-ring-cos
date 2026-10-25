@@ -16,6 +16,7 @@ import { HUD } from './ui/hud.js';
 import { HubUI } from './ui/hub.js';
 import { CLASSES, RELICS, DEPTH_MODIFIERS } from './meta/content.js';
 import { loadSave, writeSave, saveRun, loadRun, clearRun, sanitizeSave } from './meta/save.js';
+import { haptics } from './haptics.js';
 
 const HINTS = {
   move: 'WASD 移动 · 鼠标转视角 · <kbd>空格</kbd>翻滚（有无敌帧）',
@@ -552,6 +553,8 @@ class Game {
   onEnemyKilled(e, info = {}) {
     this.run.kills++;
     this.save.codex.kills++;
+    // 触觉分级（003 §0）：击杀 = 判定成功 → 中档 26ms
+    haptics.correct();
     const [a, b] = e.runes;
     const value = Math.round((a + Math.random() * (b - a)) * (this.depthMod.enemyMul.hp * 0.6 + 0.4) * (this.player.flags.runeOnKill ? 1.35 : 1));
     this.runesBurst(value, e.pos);
@@ -762,6 +765,8 @@ class Game {
 
   victory() {
     const earned = this.marksEarned(true);
+    // 触觉分级（003 §0）：通关 = 最重的语义时刻 → 重档 [14,40,14]
+    haptics.wrong();
     this.save.marks += earned.marks;
     this.save.codex.victories++;
     writeSave(this.save);
