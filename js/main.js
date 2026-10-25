@@ -852,12 +852,22 @@ class Game {
     this.input.exitLock();
     this.hud.screen('pause');
     this.hub.renderPause();
+    this.syncPauseBtn();
   }
 
   resumeGame() {
     this.state = 'playing';
     this.hud.screen(null);
     this.input.requestLock();
+    this.syncPauseBtn();
+  }
+
+  // 触摸那颗「暂停 / 继续」钮的文案：说的是**按下会发生什么**，不是写死的一句。
+  // 暂停屏一开，整块 HUD 会被 hud.screen('pause') 收起来，所以这行多半看不见 ——
+  // 但文案是从状态推出来的：状态反了，它跟着反。
+  syncPauseBtn() {
+    const b = document.getElementById('btnPause');
+    if (b) b.textContent = this.state === 'paused' ? '继续' : '暂停';
   }
 
   // -------------------------------------------------------------------- update

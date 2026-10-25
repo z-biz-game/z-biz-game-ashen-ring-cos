@@ -65,6 +65,11 @@
     <div id="touchpad">
       <div class="tp-cluster">
         <div class="tp-row">
+          <!-- 触摸设备唯一的暂停入口：动作名 pause 与键盘/手柄同一张表，
+               main.js 轮询 justPressed 时接到的是既有的 pauseGame()。 -->
+          <button class="tp-btn" type="button" id="btnPause" data-act="pause">暂停</button>
+        </div>
+        <div class="tp-row">
           <button class="tp-btn" type="button" data-act="parry">弹反</button>
           <button class="tp-btn" type="button" data-act="block">格挡</button>
         </div>
