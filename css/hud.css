@@ -59,7 +59,7 @@ body { user-select: none; cursor: default; }
 .bar { position: relative; height: 15px; margin-bottom: 6px; background: linear-gradient(#0a0b0e, #14161c); border: 1px solid rgba(120, 100, 60, 0.5); box-shadow: inset 0 0 8px #000, 0 2px 10px rgba(0, 0, 0, 0.6); overflow: hidden; }
 .bar::after { content: ""; position: absolute; inset: 0; background: linear-gradient(rgba(255, 255, 255, 0.14), transparent 55%); pointer-events: none; }
 .bar b { position: absolute; inset: 0 auto 0 0; display: block; width: 100%; transition: width 0.12s linear; }
-.bar i { position: absolute; inset: 0 auto 0 0; display: block; width: 100%; background: rgba(255, 200, 160, 0.35); transition: width 0.7s ease 0.12s; }
+.bar i { position: absolute; inset: 0 auto 0 0; display: block; width: 100%; background: rgba(255, 200, 160, 0.35); transition: width 350ms ease 0.12s; }
 .bar.hp { height: 20px; }
 .bar.hp b { background: linear-gradient(#e0574a, #6d1a17); }
 .bar.st { height: 9px; }
@@ -98,7 +98,7 @@ body { user-select: none; cursor: default; }
 .boss-name small { display: block; font-size: 10px; letter-spacing: 0.36em; color: #7d7466; margin-top: 3px; }
 .boss-track { position: relative; height: 9px; background: #0b0c10; border: 1px solid rgba(150, 130, 90, 0.5); overflow: hidden; }
 .boss-track b { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #7a1f1a, #e0574a 60%, #ffd08a); transition: width 0.16s linear; }
-.boss-track i { position: absolute; inset: 0 auto 0 0; background: rgba(255, 220, 180, 0.32); transition: width 0.85s ease 0.15s; }
+.boss-track i { position: absolute; inset: 0 auto 0 0; background: rgba(255, 220, 180, 0.32); transition: width 350ms ease 0.15s; }
 .boss-pips { display: flex; gap: 4px; justify-content: center; margin-top: 5px; }
 .boss-pips span { width: 22px; height: 2px; background: rgba(150, 130, 90, 0.35); }
 .boss-pips span.on { background: var(--gold-hi); box-shadow: 0 0 8px var(--gold); }
@@ -135,7 +135,7 @@ kbd { font-family: var(--sans); font-size: 11px; padding: 3px 7px; border: 1px s
 .dn.rune { color: var(--gold-hi); font-size: 16px; letter-spacing: 0.08em; }
 @keyframes dnUp { 0% { opacity: 0; transform: translate(-50%, -30%) scale(0.7); } 18% { opacity: 1; transform: translate(-50%, -60%) scale(1.1); } 100% { opacity: 0; transform: translate(-50%, -190%) scale(0.95); } }
 
-#flash { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 42%, rgba(150, 20, 12, 0.55) 100%); opacity: 0; transition: opacity 0.42s ease; }
+#flash { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 42%, rgba(150, 20, 12, 0.55) 100%); opacity: 0; transition: opacity 350ms ease; }
 #flash.on { opacity: 1; transition: opacity 0.04s; }
 #stamFlash { position: absolute; inset: 0; box-shadow: inset 0 0 90px rgba(120, 180, 255, 0.22); opacity: 0; transition: opacity 0.3s; }
 #stamFlash.on { opacity: 1; transition: none; }
@@ -273,7 +273,7 @@ kbd { font-family: var(--sans); font-size: 11px; padding: 3px 7px; border: 1px s
 .rules { font-size: 12px; line-height: 2; color: #978e7e; padding-left: 18px; font-family: var(--sans); }
 .rules li::marker { color: var(--gold); }
 
-#fade { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 0.4s ease; }
+#fade { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 350ms ease; }
 #fade.on { opacity: 1; }
 
 #toast-lock { position: absolute; left: 50%; bottom: 14%; transform: translateX(-50%); font-size: 12px; letter-spacing: 0.2em; color: #8d8474; font-family: var(--sans); }
@@ -387,4 +387,12 @@ body {
 /* 贴边的固定/吸底元素自己让开主屏条，别让 home indicator 压住按钮 */
 .fixed-bottom, .bottom-bar, .hud-bottom, footer.app-footer {
   padding-bottom: calc(var(--sab) + env(safe-area-inset-bottom, 0px));
+}
+
+/* org 003 §4 reduced-motion 全域兜底：系统偏好"减少动效"时停掉所有动画 / 过渡 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
 }
